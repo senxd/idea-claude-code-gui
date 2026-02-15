@@ -456,6 +456,7 @@
     "messageCount": "{{count}} messages",
     "searchPlaceholder": "Search session titles...",
     "noSearchResults": "No matching sessions found",
+    "tryOtherKeywords": "Try other search keywords",
     "deepSearchTooltip": "Deep Search (clear cache and reload)",
     "editTitle": "Edit title",
     "saveTitleButton": "Save",
@@ -506,7 +507,9 @@
     "timeoutWarning": "Please answer soon, dialog will close in {{seconds}} seconds",
     "expand": "Expand",
     "collapse": "Collapse",
-    "clickToAnswer": "Click to answer"
+    "clickToAnswer": "Click to answer",
+    "invalidFormat": "Unsupported question format, please cancel and retry.",
+    "loading": "Loading questions..."
   },
   "planApproval": {
     "title": "Plan Ready for Approval",
@@ -672,7 +675,8 @@
       "time": "Time and timezone utilities",
       "memory": "Knowledge graph and memory storage tool",
       "sequentialThinking": "Sequential thinking and reasoning tool",
-      "context7": "Document search and context retrieval tool"
+      "context7": "Document search and context retrieval tool",
+      "clickToAdd": "Click a preset to add it"
     },
     "help": {
       "title": "What is MCP?",
@@ -798,6 +802,12 @@
     "editsTab": "Edits",
     "noTodos": "No tasks running",
     "noSubagents": "No subagents running",
+    "subagentStatusRunning": "Running",
+    "subagentStatusCompleted": "Completed",
+    "subagentStatusError": "Error",
+    "subagentDescriptionLabel": "Current task",
+    "subagentPromptLabel": "Prompt",
+    "subagentNoDescription": "No subagent details",
     "noFileChanges": "No file changes",
     "showDiff": "Show Diff",
     "expand": "Expand status panel",
@@ -848,7 +858,12 @@
     "importFailed": "Failed to import Skill",
     "deleteSuccess": "Successfully deleted Skill",
     "toggleSuccess": "Updated Skill status",
+    "toggleSuccessEnabled": "Successfully enabled Skill: {{name}}",
+    "toggleSuccessDisabled": "Successfully disabled Skill: {{name}}",
     "toggleFailed": "Failed to update Skill status",
+    "operationFailed": "Operation failed: {{error}}",
+    "deleteFailed": "Failed to delete Skill",
+    "refreshed": "Skills list refreshed",
     "help": {
       "title": "What are Skills?",
       "overview": {

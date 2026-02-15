@@ -153,7 +153,7 @@ export function SkillsSettingsSection() {
           addToast(t('skills.deleteSuccess'), 'success');
           loadSkills();
         } else {
-          addToast(result.error || '删除 Skill 失败', 'error');
+          addToast(result.error || t('skills.importFailed'), 'error');
         }
       } catch (error) {
         console.error('[SkillsSettings] Failed to parse delete result:', error);
@@ -179,14 +179,14 @@ export function SkillsSettingsSection() {
         });
 
         if (result.success) {
-          const action = result.enabled ? '启用' : '停用';
-          addToast(`已成功${action} Skill: ${result.name}`, 'success');
+          const msgKey = result.enabled ? 'skills.toggleSuccessEnabled' : 'skills.toggleSuccessDisabled';
+          addToast(t(msgKey, { name: result.name }), 'success');
           loadSkills();
         } else {
           if (result.conflict) {
-            addToast(`操作失败: ${result.error}`, 'warning');
+            addToast(t('skills.operationFailed', { error: result.error }), 'warning');
           } else {
-            addToast(result.error || '操作 Skill 失败', 'error');
+            addToast(result.error || t('skills.toggleFailed'), 'error');
           }
         }
       } catch (error) {
@@ -232,7 +232,7 @@ export function SkillsSettingsSection() {
   // 刷新
   const handleRefresh = () => {
     loadSkills();
-    addToast('已刷新 Skills 列表', 'success');
+    addToast(t('skills.refreshed'), 'success');
   };
 
   // 导入 Skill
@@ -496,8 +496,8 @@ export function SkillsSettingsSection() {
         <SkillConfirmDialog
           title={t('skills.deleteTitle')}
           message={t('skills.deleteMessage', { scope: deletingSkill.scope === 'global' ? t('skills.deleteMessageGlobal') : t('skills.deleteMessageLocal'), name: deletingSkill.name })}
-          confirmText="删除"
-          cancelText="取消"
+          confirmText={t('common.delete')}
+          cancelText={t('common.cancel')}
           onConfirm={confirmDelete}
           onCancel={cancelDelete}
         />

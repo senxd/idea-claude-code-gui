@@ -434,6 +434,10 @@ export interface ChatInputBoxProps {
   usageUsedTokens?: number;
   /** Maximum context tokens */
   usageMaxTokens?: number;
+  /** Rolling 5-hour usage (tokens) */
+  usageLast5hTokens?: number;
+  /** Current week usage (tokens) */
+  usageWeekTokens?: number;
   /** Whether to show usage */
   showUsage?: boolean;
   /** Whether always thinking is enabled */

@@ -175,9 +175,9 @@ export function McpPresetDialog({ onClose, onSelect }: McpPresetDialogProps) {
         <div className="dialog-footer">
           <div className="footer-hint">
             <span className="codicon codicon-info"></span>
-            点击预设项即可添加
+            {t('mcp.presets.clickToAdd')}
           </div>
-          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
         </div>
       </div>
     </div>

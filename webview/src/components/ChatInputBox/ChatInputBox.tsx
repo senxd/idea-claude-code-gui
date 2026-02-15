@@ -75,6 +75,8 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
       usagePercentage = 0,
       usageUsedTokens,
       usageMaxTokens,
+      usageLast5hTokens,
+      usageWeekTokens,
       showUsage = true,
       attachments: externalAttachments,
       placeholder = '', // Will be passed from parent via t('chat.inputPlaceholder')
@@ -680,10 +682,12 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
           onRemoveAttachment={handleRemoveAttachment}
           activeFile={activeFile}
           selectedLines={selectedLines}
-          usagePercentage={usagePercentage}
-          usageUsedTokens={usageUsedTokens}
-          usageMaxTokens={usageMaxTokens}
-          showUsage={showUsage}
+        usagePercentage={usagePercentage}
+        usageUsedTokens={usageUsedTokens}
+        usageMaxTokens={usageMaxTokens}
+        usageLast5hTokens={usageLast5hTokens}
+        usageWeekTokens={usageWeekTokens}
+        showUsage={showUsage}
           onClearContext={onClearContext}
           onAddAttachment={handleAddAttachment}
           selectedAgent={selectedAgent}

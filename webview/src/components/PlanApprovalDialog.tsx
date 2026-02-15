@@ -147,7 +147,7 @@ const PlanApprovalDialog = ({
         <div className="plan-approval-dialog-collapsed">
           <div className="collapsed-header">
             <span className="collapsed-title">
-              {t('planApproval.title', '计划已准备就绪')}
+              {t('planApproval.title', 'Plan Ready for Approval')}
             </span>
             <span className={`countdown-timer ${isTimeWarning ? 'warning' : ''}`}>
               <span className="codicon codicon-clock" />
@@ -157,7 +157,7 @@ const PlanApprovalDialog = ({
           <button
             className="expand-button"
             onClick={() => setIsCollapsed(false)}
-            title={t('common.expand', '展开')}
+            title={t('common.expand', 'Expand')}
           >
             <span className="codicon codicon-chevron-up" />
           </button>
@@ -173,7 +173,7 @@ const PlanApprovalDialog = ({
         {isTimeWarning && (
           <div className="timeout-warning-banner">
             <span className="codicon codicon-warning" />
-            <span>{t('planApproval.timeoutWarning', '请尽快做出选择，对话框将在 {{seconds}} 秒后自动关闭', { seconds: remainingSeconds })}</span>
+            <span>{t('planApproval.timeoutWarning', 'Please make a choice soon, dialog will close in {{seconds}} seconds', { seconds: remainingSeconds })}</span>
           </div>
         )}
 
@@ -181,10 +181,10 @@ const PlanApprovalDialog = ({
         <div className="plan-approval-dialog-header">
           <div className="header-left">
             <h3 className="plan-approval-dialog-title">
-              {t('planApproval.title', '计划已准备就绪')}
+              {t('planApproval.title', 'Plan Ready for Approval')}
             </h3>
             <p className="plan-approval-dialog-subtitle">
-              {t('planApproval.subtitle', 'Claude 已完成规划，准备执行。')}
+              {t('planApproval.subtitle', 'Claude has finished planning and is ready to execute.')}
             </p>
           </div>
           <div className="header-right">
@@ -197,7 +197,7 @@ const PlanApprovalDialog = ({
             <button
               className="collapse-button"
               onClick={() => setIsCollapsed(true)}
-              title={t('common.collapse', '收起')}
+              title={t('common.collapse', 'Collapse')}
             >
               <span className="codicon codicon-chevron-down" />
             </button>
@@ -207,10 +207,10 @@ const PlanApprovalDialog = ({
         {/* Execution Mode Selection */}
         <div className="plan-approval-mode-section">
           <h4 className="mode-header">
-            {t('planApproval.executionMode', '执行模式')}
+            {t('planApproval.executionMode', 'Execution Mode')}
           </h4>
           <p className="mode-description">
-            {t('planApproval.executionModeDescription', '选择 Claude 执行计划的方式：')}
+            {t('planApproval.executionModeDescription', 'Select how Claude should execute the plan:')}
           </p>
           <div className="mode-options">
             {EXECUTION_MODES.map((mode) => (
@@ -237,7 +237,7 @@ const PlanApprovalDialog = ({
             className="action-button secondary"
             onClick={handleReject}
           >
-            {t('planApproval.reject', '拒绝')}
+            {t('planApproval.reject', 'Reject')}
           </button>
 
           <div className="action-buttons-right">
@@ -245,7 +245,7 @@ const PlanApprovalDialog = ({
               className="action-button primary"
               onClick={handleApprove}
             >
-              {t('planApproval.approve', '批准并执行')}
+              {t('planApproval.approve', 'Approve & Execute')}
             </button>
           </div>
         </div>
@@ -253,10 +253,10 @@ const PlanApprovalDialog = ({
         {/* Keyboard hints */}
         <div className="plan-approval-hints">
           <span className="hint">
-            <kbd>Enter</kbd> {t('planApproval.toApprove', '批准')}
+            <kbd>Enter</kbd> {t('planApproval.toApprove', 'to approve')}
           </span>
           <span className="hint">
-            <kbd>Esc</kbd> {t('planApproval.toReject', '拒绝')}
+            <kbd>Esc</kbd> {t('planApproval.toReject', 'to reject')}
           </span>
         </div>
       </div>

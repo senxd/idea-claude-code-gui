@@ -7,7 +7,6 @@ import {
   BashToolBlock,
   EditToolBlock,
   GenericToolBlock,
-  TaskExecutionBlock,
 } from '../toolBlocks';
 import { EDIT_TOOL_NAMES, BASH_TOOL_NAMES, isToolName } from '../../utils/toolConstants';
 
@@ -174,12 +173,7 @@ export function ContentBlockRenderer({
     }
 
     if (toolName === 'task') {
-      return (
-        <TaskExecutionBlock
-          input={block.input}
-          result={findToolResult(block.id, messageIndex)}
-        />
-      );
+      return null;
     }
 
     if (isToolName(block.name, EDIT_TOOL_NAMES)) {

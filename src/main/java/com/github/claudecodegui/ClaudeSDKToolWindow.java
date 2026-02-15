@@ -35,6 +35,7 @@ import com.github.claudecodegui.util.JBCefBrowserFactory;
 import com.github.claudecodegui.util.JsUtils;
 import com.github.claudecodegui.util.LanguageConfigService;
 import com.github.claudecodegui.util.PlatformUtils;
+import com.github.claudecodegui.util.UsageWindowCalculator;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -2535,6 +2536,8 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 usageUpdate.addProperty("limit", maxTokens);
                 usageUpdate.addProperty("usedTokens", usedTokens);
                 usageUpdate.addProperty("maxTokens", maxTokens);
+                usageUpdate.add("windowUsage",
+                        UsageWindowCalculator.calculate(currentProvider, project.getBasePath()));
 
                 String usageJson = new Gson().toJson(usageUpdate);
                 ApplicationManager.getApplication().invokeLater(() -> {
@@ -2623,6 +2626,8 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                     usageUpdate.addProperty("limit", maxTokens);
                     usageUpdate.addProperty("usedTokens", 0);
                     usageUpdate.addProperty("maxTokens", maxTokens);
+                    usageUpdate.add("windowUsage",
+                            UsageWindowCalculator.calculate(handlerContext.getCurrentProvider(), project.getBasePath()));
 
                     String usageJson = new Gson().toJson(usageUpdate);
 

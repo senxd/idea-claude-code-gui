@@ -72,6 +72,92 @@
     min-width: 0; /* 允许内容缩小 */
 }
 
+.subagent-thread-card {
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    margin: 6px 0;
+    overflow: hidden;
+}
+
+.subagent-thread-header {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.subagent-thread-header:hover {
+    background: var(--bg-hover);
+}
+
+.subagent-thread-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 0;
+    flex: 1;
+}
+
+.subagent-thread-status {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+}
+
+.subagent-thread-status.status-running {
+    color: var(--color-todo-panel-progress);
+    background: rgba(0, 122, 204, 0.12);
+    border-color: rgba(0, 122, 204, 0.25);
+}
+
+.subagent-thread-status.status-completed {
+    color: var(--color-todo-status-completed);
+    background: rgba(76, 175, 80, 0.12);
+    border-color: rgba(76, 175, 80, 0.25);
+}
+
+.subagent-thread-status.status-error {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.12);
+    border-color: rgba(255, 107, 107, 0.25);
+}
+
+.subagent-thread-summary {
+    padding: 0 12px 10px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.4;
+    border-bottom: 1px solid var(--border-primary);
+    word-break: break-word;
+}
+
+.subagent-thread-body {
+    padding: 8px 12px 12px;
+}
+
+.content-block-subagent {
+    margin: 6px 0;
+}
+
+.subagent-thread-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 4px 0;
+}
+
 .message.assistant .message-role-label {
     display: none; /* Hide label for assistant */
 }
@@ -297,6 +383,7 @@
 
 .markdown-content p {
     margin-bottom: 10px;
+    white-space: pre-wrap;
     word-wrap: break-word;
     overflow-wrap: break-word;
     max-width: 100%;

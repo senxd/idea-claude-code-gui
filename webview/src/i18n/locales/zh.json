@@ -456,6 +456,7 @@
     "messageCount": "{{count}} 条消息",
     "searchPlaceholder": "搜索会话标题...",
     "noSearchResults": "未找到匹配的会话",
+    "tryOtherKeywords": "尝试其他搜索关键词",
     "deepSearchTooltip": "深度搜索（清空缓存后重新加载）",
     "editTitle": "编辑标题",
     "saveTitleButton": "保存",
@@ -506,7 +507,9 @@
     "timeoutWarning": "请尽快回答，对话框将在 {{seconds}} 秒后自动关闭",
     "expand": "展开",
     "collapse": "收起",
-    "clickToAnswer": "点击回答"
+    "clickToAnswer": "点击回答",
+    "invalidFormat": "问题数据格式不支持，请取消后重试。",
+    "loading": "正在加载问题..."
   },
   "planApproval": {
     "title": "计划已准备就绪",
@@ -672,7 +675,8 @@
       "time": "时间和时区工具",
       "memory": "知识图谱和记忆存储工具",
       "sequentialThinking": "顺序思考和推理工具",
-      "context7": "文档搜索和上下文检索工具"
+      "context7": "文档搜索和上下文检索工具",
+      "clickToAdd": "点击预设项即可添加"
     },
     "help": {
       "title": "什么是 MCP?",
@@ -849,7 +853,12 @@
     "importFailed": "导入 Skill 失败",
     "deleteSuccess": "已成功删除 Skill",
     "toggleSuccess": "已更新 Skill 状态",
+    "toggleSuccessEnabled": "已成功启用 Skill: {{name}}",
+    "toggleSuccessDisabled": "已成功停用 Skill: {{name}}",
     "toggleFailed": "更新 Skill 状态失败",
+    "operationFailed": "操作失败: {{error}}",
+    "deleteFailed": "删除 Skill 失败",
+    "refreshed": "已刷新 Skills 列表",
     "help": {
       "title": "什么是 Skills?",
       "overview": {

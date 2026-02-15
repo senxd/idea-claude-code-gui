@@ -33,7 +33,14 @@ type GroupedBlock =
   | { type: 'single'; block: ClaudeContentBlock; originalIndex: number }
   | { type: 'read_group'; blocks: ClaudeContentBlock[]; startIndex: number }
   | { type: 'edit_group'; blocks: ClaudeContentBlock[]; startIndex: number }
-  | { type: 'bash_group'; blocks: ClaudeContentBlock[]; startIndex: number };
+  | { type: 'bash_group'; blocks: ClaudeContentBlock[]; startIndex: number }
+  | {
+      type: 'subagent_group';
+      taskBlock: ClaudeContentBlock;
+      taskIndex: number;
+      nestedBlocks: ClaudeContentBlock[];
+      nestedStartIndex: number;
+    };
 
 /** Shared copy icon SVG used by both user and assistant message copy buttons */
 const CopyIcon = () => (
@@ -160,6 +167,79 @@ function groupBlocks(blocks: ClaudeContentBlock[]): GroupedBlock[] {
   return groupedBlocks;
 }
 
+function offsetGroupedBlocks(groups: GroupedBlock[], offset: number): GroupedBlock[] {
+  return groups.map((group) => {
+    if (group.type === 'single') {
+      return { ...group, originalIndex: group.originalIndex + offset };
+    }
+    if (group.type === 'read_group' || group.type === 'edit_group' || group.type === 'bash_group') {
+      return { ...group, startIndex: group.startIndex + offset };
+    }
+    return group;
+  });
+}
+
+function groupBlocksWithSubagents(blocks: ClaudeContentBlock[]): GroupedBlock[] {
+  const groupedBlocks: GroupedBlock[] = [];
+  let segmentStart = 0;
+  let i = 0;
+
+  while (i < blocks.length) {
+    const block = blocks[i];
+    const toolName = block.type === 'tool_use' ? block.name?.toLowerCase() : '';
+
+    if (block.type === 'tool_use' && toolName === 'task') {
+      if (segmentStart < i) {
+        const segment = blocks.slice(segmentStart, i);
+        groupedBlocks.push(...offsetGroupedBlocks(groupBlocks(segment), segmentStart));
+      }
+
+      const nestedBlocks: ClaudeContentBlock[] = [];
+      let j = i + 1;
+
+      while (j < blocks.length) {
+        const nextBlock = blocks[j];
+        if (nextBlock.type === 'thinking') {
+          nestedBlocks.push(nextBlock);
+          j += 1;
+          continue;
+        }
+        if (nextBlock.type !== 'tool_use') {
+          break;
+        }
+        const nextToolName = nextBlock.name?.toLowerCase();
+        if (nextToolName === 'task') {
+          break;
+        }
+        if (nextToolName !== 'todowrite') {
+          nestedBlocks.push(nextBlock);
+        }
+        j += 1;
+      }
+
+      groupedBlocks.push({
+        type: 'subagent_group',
+        taskBlock: block,
+        taskIndex: i,
+        nestedBlocks,
+        nestedStartIndex: i + 1,
+      });
+
+      segmentStart = j;
+      i = j;
+      continue;
+    }
+    i += 1;
+  }
+
+  if (segmentStart < blocks.length) {
+    const trailing = blocks.slice(segmentStart);
+    groupedBlocks.push(...offsetGroupedBlocks(groupBlocks(trailing), segmentStart));
+  }
+
+  return groupedBlocks;
+}
+
 export const MessageItem = memo(function MessageItem({
   message,
   messageIndex,
@@ -179,19 +259,27 @@ export const MessageItem = memo(function MessageItem({
   const copyTimeoutRef = useRef<number | null>(null);
 
   // Manage thinking expansion state locally to avoid prop drilling and unnecessary re-renders
-  const [expandedThinking, setExpandedThinking] = useState<Record<number, boolean>>({});
+  const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
+  const [expandedSubagents, setExpandedSubagents] = useState<Record<string, boolean>>({});
 
-  const toggleThinking = useCallback((blockIndex: number) => {
+  const toggleThinking = useCallback((blockKey: string) => {
     setExpandedThinking((prev) => ({
       ...prev,
-      [blockIndex]: !prev[blockIndex],
+      [blockKey]: !prev[blockKey],
     }));
   }, []);
 
   const isThinkingExpanded = useCallback(
-    (blockIndex: number) => Boolean(expandedThinking[blockIndex]),
+    (blockKey: string) => Boolean(expandedThinking[blockKey]),
     [expandedThinking]
   );
+
+  const isSubagentExpanded = useCallback((key: string, defaultExpanded: boolean) => {
+    if (Object.prototype.hasOwnProperty.call(expandedSubagents, key)) {
+      return Boolean(expandedSubagents[key]);
+    }
+    return defaultExpanded;
+  }, [expandedSubagents]);
 
   const isLastAssistantMessage = message.type === 'assistant' && isLast;
   const isMessageStreaming = streamingActive && isLastAssistantMessage;
@@ -270,24 +358,153 @@ export const MessageItem = memo(function MessageItem({
 
     if (lastThinkingIndex !== lastAutoExpandedIndexRef.current) {
       setExpandedThinking((prev) => {
-        const newState = { ...prev };
+        const newState: Record<string, boolean> = { ...prev };
         // Collapse all thinking blocks
         thinkingIndices.forEach((idx) => {
-          newState[idx] = false;
+          newState[`root-${idx}`] = false;
         });
         // Expand the latest one
-        newState[lastThinkingIndex] = true;
+        newState[`root-${lastThinkingIndex}`] = true;
         return newState;
       });
       lastAutoExpandedIndexRef.current = lastThinkingIndex;
     }
   }, [blocks, isMessageStreaming]);
 
-  const groupedBlocks = useMemo(() => groupBlocks(blocks), [blocks]);
+  const groupedBlocks = useMemo(() => groupBlocksWithSubagents(blocks), [blocks]);
+  const hasRenderableContent = useMemo(() => {
+    return blocks.some((block) => {
+      if (block.type === 'tool_use') {
+        const toolName = block.name?.toLowerCase();
+        return toolName !== 'task' && toolName !== 'todowrite';
+      }
+      if (block.type === 'text') {
+        return Boolean(block.text?.trim());
+      }
+      return true;
+    });
+  }, [blocks]);
   const messageStyle = useMemo(
     () => ({ contentVisibility: 'auto', containIntrinsicSize: '0 320px' } as const),
     []
   );
+
+  const renderStandardGroupedBlock = (
+    grouped: GroupedBlock,
+    keyPrefix: string,
+    nested = false
+  ) => {
+    const wrapperClass = nested ? 'content-block content-block-subagent' : 'content-block';
+
+    if (grouped.type === 'read_group') {
+      const readItems = grouped.blocks.map((b) => {
+        const block = b as { type: 'tool_use'; id?: string; name?: string; input?: Record<string, unknown> };
+        return {
+          name: block.name,
+          input: block.input,
+          result: findToolResult(block.id, messageIndex),
+        };
+      });
+
+      if (readItems.length === 1) {
+        return (
+          <div key={`${keyPrefix}-readgroup-${grouped.startIndex}`} className={wrapperClass}>
+            <ReadToolBlock input={readItems[0].input} />
+          </div>
+        );
+      }
+
+      return (
+        <div key={`${keyPrefix}-readgroup-${grouped.startIndex}`} className={wrapperClass}>
+          <ReadToolGroupBlock items={readItems} />
+        </div>
+      );
+    }
+
+    if (grouped.type === 'edit_group') {
+      const editItems = grouped.blocks.map((b) => {
+        const block = b as { type: 'tool_use'; id?: string; name?: string; input?: Record<string, unknown> };
+        return {
+          name: block.name,
+          input: block.input,
+          result: findToolResult(block.id, messageIndex),
+        };
+      });
+
+      if (editItems.length === 1) {
+        return (
+          <div key={`${keyPrefix}-editgroup-${grouped.startIndex}`} className={wrapperClass}>
+            <EditToolBlock
+              name={editItems[0].name}
+              input={editItems[0].input}
+              result={editItems[0].result}
+            />
+          </div>
+        );
+      }
+
+      return (
+        <div key={`${keyPrefix}-editgroup-${grouped.startIndex}`} className={wrapperClass}>
+          <EditToolGroupBlock items={editItems} />
+        </div>
+      );
+    }
+
+    if (grouped.type === 'bash_group') {
+      const bashItems = grouped.blocks.map((b) => {
+        const block = b as { type: 'tool_use'; id?: string; name?: string; input?: Record<string, unknown> };
+        return {
+          name: block.name,
+          input: block.input,
+          result: findToolResult(block.id, messageIndex),
+          toolId: block.id,
+        };
+      });
+
+      if (bashItems.length === 1) {
+        return (
+          <div key={`${keyPrefix}-bashgroup-${grouped.startIndex}`} className={wrapperClass}>
+            <BashToolBlock
+              name={bashItems[0].name}
+              input={bashItems[0].input}
+              result={bashItems[0].result}
+              toolId={bashItems[0].toolId}
+            />
+          </div>
+        );
+      }
+
+      return (
+        <div key={`${keyPrefix}-bashgroup-${grouped.startIndex}`} className={wrapperClass}>
+          <BashToolGroupBlock items={bashItems} deniedToolIds={window.__deniedToolIds} />
+        </div>
+      );
+    }
+
+    if (grouped.type !== 'single') {
+      return null;
+    }
+
+    const { block, originalIndex: blockIndex } = grouped;
+    const thinkingKey = nested ? `${keyPrefix}-thinking-${blockIndex}` : `root-${blockIndex}`;
+    return (
+      <div key={`${keyPrefix}-${blockIndex}`} className={wrapperClass}>
+        <ContentBlockRenderer
+          block={block}
+          messageIndex={messageIndex}
+          messageType={message.type}
+          isStreaming={isMessageStreaming}
+          isThinkingExpanded={isThinkingExpanded(thinkingKey)}
+          isThinking={isThinking}
+          isLastMessage={isLast}
+          isLastBlock={blockIndex === blocks.length - 1}
+          t={t}
+          onToggleThinking={() => toggleThinking(thinkingKey)}
+          findToolResult={findToolResult}
+        />
+      </div>
+    );
+  };
 
   const renderGroupedBlocks = () => {
     if (message.type === 'error') {
@@ -302,115 +519,73 @@ export const MessageItem = memo(function MessageItem({
       );
     }
 
-    return groupedBlocks.map((grouped) => {
-      if (grouped.type === 'read_group') {
-        const readItems = grouped.blocks.map((b) => {
-          const block = b as { type: 'tool_use'; id?: string; name?: string; input?: Record<string, unknown> };
-          return {
-            name: block.name,
-            input: block.input,
-            result: findToolResult(block.id, messageIndex),
-          };
-        });
-
-        if (readItems.length === 1) {
-          return (
-            <div key={`${messageIndex}-readgroup-${grouped.startIndex}`} className="content-block">
-              <ReadToolBlock input={readItems[0].input} />
-            </div>
-          );
-        }
-
-        return (
-          <div key={`${messageIndex}-readgroup-${grouped.startIndex}`} className="content-block">
-            <ReadToolGroupBlock items={readItems} />
-          </div>
-        );
+    return groupedBlocks.map((grouped, index) => {
+      if (grouped.type !== 'subagent_group') {
+        return renderStandardGroupedBlock(grouped, `${messageIndex}`, false);
       }
 
-      if (grouped.type === 'edit_group') {
-        const editItems = grouped.blocks.map((b) => {
-          const block = b as { type: 'tool_use'; id?: string; name?: string; input?: Record<string, unknown> };
-          return {
-            name: block.name,
-            input: block.input,
-            result: findToolResult(block.id, messageIndex),
-          };
-        });
-
-        if (editItems.length === 1) {
-          return (
-            <div key={`${messageIndex}-editgroup-${grouped.startIndex}`} className="content-block">
-              <EditToolBlock
-                name={editItems[0].name}
-                input={editItems[0].input}
-                result={editItems[0].result}
-              />
-            </div>
-          );
-        }
-
-        return (
-          <div key={`${messageIndex}-editgroup-${grouped.startIndex}`} className="content-block">
-            <EditToolGroupBlock items={editItems} />
-          </div>
-        );
-      }
-
-      if (grouped.type === 'bash_group') {
-        const bashItems = grouped.blocks.map((b) => {
-          const block = b as { type: 'tool_use'; id?: string; name?: string; input?: Record<string, unknown> };
-          return {
-            name: block.name,
-            input: block.input,
-            result: findToolResult(block.id, messageIndex),
-            toolId: block.id,
-          };
-        });
-
-        if (bashItems.length === 1) {
-          return (
-            <div key={`${messageIndex}-bashgroup-${grouped.startIndex}`} className="content-block">
-              <BashToolBlock
-                name={bashItems[0].name}
-                input={bashItems[0].input}
-                result={bashItems[0].result}
-                toolId={bashItems[0].toolId}
-              />
-            </div>
-          );
-        }
-
-        return (
-          <div key={`${messageIndex}-bashgroup-${grouped.startIndex}`} className="content-block">
-            <BashToolGroupBlock items={bashItems} deniedToolIds={window.__deniedToolIds} />
-          </div>
-        );
-      }
-
-      const { block, originalIndex: blockIndex } = grouped;
+      const taskTool = grouped.taskBlock as { id?: string; input?: Record<string, unknown> };
+      const taskInput = taskTool.input || {};
+      const subagentType = String((taskInput.subagent_type as string) ?? (taskInput.subagentType as string) ?? t('statusPanel.subagentTab'));
+      const description = String((taskInput.description as string) ?? '').trim();
+      const taskResult = findToolResult(taskTool.id, messageIndex);
+      const status = !taskResult ? 'running' : taskResult.is_error ? 'error' : 'completed';
+      const subagentKey = `${messageIndex}-subagent-${grouped.taskIndex}-${index}`;
+      const expanded = isSubagentExpanded(subagentKey, status === 'running' || isMessageStreaming);
+      const nestedGroupedBlocks = groupBlocks(grouped.nestedBlocks);
 
       return (
-        <div key={`${messageIndex}-${blockIndex}`} className="content-block">
-          <ContentBlockRenderer
-            block={block}
-            messageIndex={messageIndex}
-            messageType={message.type}
-            isStreaming={isMessageStreaming}
-            isThinkingExpanded={isThinkingExpanded(blockIndex)}
-            isThinking={isThinking}
-            isLastMessage={isLast}
-            isLastBlock={blockIndex === blocks.length - 1}
-            t={t}
-            onToggleThinking={() => toggleThinking(blockIndex)}
-            findToolResult={findToolResult}
-          />
+        <div key={subagentKey} className={`subagent-thread-card status-${status}`}>
+          <button
+            type="button"
+            className="subagent-thread-header"
+            onClick={() => {
+              setExpandedSubagents((prev) => ({
+                ...prev,
+                [subagentKey]: !expanded,
+              }));
+            }}
+          >
+            <span className="subagent-thread-title">
+              <span className="codicon codicon-hubot" />
+              <span>{subagentType}</span>
+            </span>
+            <span className={`subagent-thread-status status-${status}`}>
+              {status === 'running'
+                ? t('statusPanel.subagentStatusRunning')
+                : status === 'completed'
+                  ? t('statusPanel.subagentStatusCompleted')
+                  : t('statusPanel.subagentStatusError')}
+            </span>
+            <span className={`codicon ${expanded ? 'codicon-chevron-down' : 'codicon-chevron-right'}`} />
+          </button>
+
+          {description && (
+            <div className="subagent-thread-summary" title={description}>
+              {description}
+            </div>
+          )}
+
+          {expanded && (
+            <div className="subagent-thread-body">
+              {nestedGroupedBlocks.length > 0
+                ? nestedGroupedBlocks.map((nested) =>
+                    renderStandardGroupedBlock(nested, `${subagentKey}-nested`, true))
+                : (
+                  <div className="subagent-thread-empty">{t('statusPanel.noSubagents')}</div>
+                )}
+            </div>
+          )}
         </div>
       );
     });
   };
 
   if (isEmptyStreamingPlaceholder && !showStreamingConnectHint) {
+    return <></>;
+  }
+
+  if (message.type === 'assistant' && !isMessageStreaming && !hasRenderableContent) {
     return <></>;
   }
 

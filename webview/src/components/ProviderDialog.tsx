@@ -469,10 +469,10 @@ export default function ProviderDialog({
                   type="button"
                   className="format-btn"
                   onClick={handleFormatJson}
-                  title={t('settings.provider.dialog.formatJson') || '格式化 JSON'}
+                  title={t('settings.provider.dialog.formatJson') || 'Format JSON'}
                 >
                   <span className="codicon codicon-symbol-keyword" />
-                  {t('settings.provider.dialog.formatJson') || '格式化'}
+                  {t('settings.provider.dialog.formatJson') || 'Format'}
                 </button>
               </div>
 

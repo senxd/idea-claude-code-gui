@@ -116,36 +116,18 @@ public class ClaudeSDKBridge extends BaseSDKBridge {
             result.error = errorMessage;
             callback.onError(errorMessage);
         } else if (line.startsWith("[CONTENT]")) {
-            String content = line.substring("[CONTENT]".length()).trim();
+            String content = decodeConsoleTextPayload(line.substring("[CONTENT]".length()));
             assistantContent.append(content);
             callback.onMessage("content", content);
         } else if (line.startsWith("[CONTENT_DELTA]")) {
-            // 🔧 流式传输：解析 JSON 编码的 delta，保留换行符
-            String rawDelta = line.substring("[CONTENT_DELTA]".length());
-            String jsonStr = rawDelta.startsWith(" ") ? rawDelta.substring(1) : rawDelta;
-            String delta;
-            try {
-                // JSON 解码，还原换行符等特殊字符
-                delta = new com.google.gson.Gson().fromJson(jsonStr, String.class);
-            } catch (Exception e) {
-                // 解析失败时使用原始字符串
-                delta = jsonStr;
-            }
+            String delta = decodeConsoleTextPayload(line.substring("[CONTENT_DELTA]".length()));
             assistantContent.append(delta);
             callback.onMessage("content_delta", delta);
         } else if (line.startsWith("[THINKING]")) {
-            String thinkingContent = line.substring("[THINKING]".length()).trim();
+            String thinkingContent = decodeConsoleTextPayload(line.substring("[THINKING]".length()));
             callback.onMessage("thinking", thinkingContent);
         } else if (line.startsWith("[THINKING_DELTA]")) {
-            // 🔧 流式传输：解析 JSON 编码的 thinking delta
-            String rawDelta = line.substring("[THINKING_DELTA]".length());
-            String jsonStr = rawDelta.startsWith(" ") ? rawDelta.substring(1) : rawDelta;
-            String thinkingDelta;
-            try {
-                thinkingDelta = new com.google.gson.Gson().fromJson(jsonStr, String.class);
-            } catch (Exception e) {
-                thinkingDelta = jsonStr;
-            }
+            String thinkingDelta = decodeConsoleTextPayload(line.substring("[THINKING_DELTA]".length()));
             callback.onMessage("thinking_delta", thinkingDelta);
         } else if (line.startsWith("[STREAM_START]")) {
             // 🔧 流式传输：开始标记
@@ -166,6 +148,25 @@ public class ClaudeSDKBridge extends BaseSDKBridge {
             callback.onMessage("message_start", "");
         } else if (line.startsWith("[MESSAGE_END]")) {
             callback.onMessage("message_end", "");
+        }
+    }
+
+    /**
+     * Decode plain stdout payload emitted by console.log(tag, payload).
+     * Removes the separator space added by console.log and then best-effort JSON-decodes.
+     */
+    private String decodeConsoleTextPayload(String rawPayload) {
+        String payload = rawPayload != null && rawPayload.startsWith(" ")
+            ? rawPayload.substring(1)
+            : (rawPayload != null ? rawPayload : "");
+        if (payload.isEmpty()) {
+            return "";
+        }
+        try {
+            String decoded = gson.fromJson(payload, String.class);
+            return decoded != null ? decoded : "";
+        } catch (Exception ignored) {
+            return payload;
         }
     }
 
@@ -776,34 +777,18 @@ public class ClaudeSDKBridge extends BaseSDKBridge {
                                 result.error = errorMessage;
                                 callback.onError(errorMessage);
                             } else if (line.startsWith("[CONTENT]")) {
-                                String content = line.substring("[CONTENT]".length()).trim();
+                                String content = decodeConsoleTextPayload(line.substring("[CONTENT]".length()));
                                 assistantContent.append(content);
                                 callback.onMessage("content", content);
                             } else if (line.startsWith("[CONTENT_DELTA]")) {
-                                // 🔧 流式传输：解析 JSON 编码的 delta，保留换行符
-                                String rawDelta = line.substring("[CONTENT_DELTA]".length());
-                                String jsonStr = rawDelta.startsWith(" ") ? rawDelta.substring(1) : rawDelta;
-                                String delta;
-                                try {
-                                    delta = new com.google.gson.Gson().fromJson(jsonStr, String.class);
-                                } catch (Exception e) {
-                                    delta = jsonStr;
-                                }
+                                String delta = decodeConsoleTextPayload(line.substring("[CONTENT_DELTA]".length()));
                                 assistantContent.append(delta);
                                 callback.onMessage("content_delta", delta);
                             } else if (line.startsWith("[THINKING]")) {
-                                String thinkingContent = line.substring("[THINKING]".length()).trim();
+                                String thinkingContent = decodeConsoleTextPayload(line.substring("[THINKING]".length()));
                                 callback.onMessage("thinking", thinkingContent);
                             } else if (line.startsWith("[THINKING_DELTA]")) {
-                                // 🔧 流式传输：解析 JSON 编码的 thinking delta
-                                String rawDelta = line.substring("[THINKING_DELTA]".length());
-                                String jsonStr = rawDelta.startsWith(" ") ? rawDelta.substring(1) : rawDelta;
-                                String thinkingDelta;
-                                try {
-                                    thinkingDelta = new com.google.gson.Gson().fromJson(jsonStr, String.class);
-                                } catch (Exception e) {
-                                    thinkingDelta = jsonStr;
-                                }
+                                String thinkingDelta = decodeConsoleTextPayload(line.substring("[THINKING_DELTA]".length()));
                                 callback.onMessage("thinking_delta", thinkingDelta);
                             } else if (line.startsWith("[STREAM_START]")) {
                                 // 🔧 流式传输：开始标记

@@ -108,11 +108,11 @@ public class CodexSDKBridge extends BaseSDKBridge {
             } catch (Exception ignored) {
             }
         } else if (line.startsWith("[CONTENT_DELTA]")) {
-            String delta = line.substring("[CONTENT_DELTA]".length()).trim();
+            String delta = decodeConsoleTextPayload(line.substring("[CONTENT_DELTA]".length()));
             assistantContent.append(delta);
             callback.onMessage("content_delta", delta);
         } else if (line.startsWith("[CONTENT]")) {
-            String content = line.substring("[CONTENT]".length()).trim();
+            String content = decodeConsoleTextPayload(line.substring("[CONTENT]".length()));
             // Avoid duplicate
             if (!assistantContent.toString().contains(content)) {
                 assistantContent.append(content);
@@ -132,6 +132,24 @@ public class CodexSDKBridge extends BaseSDKBridge {
             result.success = false;
             result.error = errorMessage;
             callback.onError(errorMessage);
+        }
+    }
+
+    /**
+     * Decode payload emitted by console.log(tag, payload) without stripping real content whitespace.
+     */
+    private String decodeConsoleTextPayload(String rawPayload) {
+        String payload = rawPayload != null && rawPayload.startsWith(" ")
+                ? rawPayload.substring(1)
+                : (rawPayload != null ? rawPayload : "");
+        if (payload.isEmpty()) {
+            return "";
+        }
+        try {
+            String decoded = gson.fromJson(payload, String.class);
+            return decoded != null ? decoded : "";
+        } catch (Exception ignored) {
+            return payload;
         }
     }
 
@@ -449,11 +467,11 @@ public class CodexSDKBridge extends BaseSDKBridge {
                                 } catch (Exception ignored) {
                                 }
                             } else if (line.startsWith("[CONTENT_DELTA]")) {
-                                String delta = line.substring("[CONTENT_DELTA]".length()).trim();
+                                String delta = decodeConsoleTextPayload(line.substring("[CONTENT_DELTA]".length()));
                                 assistantContent.append(delta);
                                 callback.onMessage("content_delta", delta);
                             } else if (line.startsWith("[CONTENT]")) {
-                                String content = line.substring("[CONTENT]".length()).trim();
+                                String content = decodeConsoleTextPayload(line.substring("[CONTENT]".length()));
                                 // Avoid duplicate
                                 if (!assistantContent.toString().contains(content)) {
                                     assistantContent.append(content);

@@ -8,6 +8,7 @@ import com.github.claudecodegui.bridge.NodeDetector;
 import com.github.claudecodegui.model.NodeDetectionResult;
 import com.github.claudecodegui.util.FontConfigService;
 import com.github.claudecodegui.util.ThemeConfigService;
+import com.github.claudecodegui.util.UsageWindowCalculator;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
@@ -419,6 +420,8 @@ public class SettingsHandler extends BaseMessageHandler {
         usageUpdate.addProperty("limit", maxTokens);
         usageUpdate.addProperty("usedTokens", usedTokens);
         usageUpdate.addProperty("maxTokens", maxTokens);
+        usageUpdate.add("windowUsage",
+                UsageWindowCalculator.calculate(context.getCurrentProvider(), context.getProject().getBasePath()));
 
         String usageJson = new Gson().toJson(usageUpdate);
 

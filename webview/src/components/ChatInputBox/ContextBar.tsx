@@ -10,6 +10,8 @@ interface ContextBarProps {
   percentage?: number;
   usedTokens?: number;
   maxTokens?: number;
+  last5hTokens?: number;
+  weekTokens?: number;
   showUsage?: boolean;
   onClearFile?: () => void;
   onAddAttachment?: (files: FileList) => void;
@@ -33,6 +35,8 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
   percentage = 0,
   usedTokens,
   maxTokens,
+  last5hTokens,
+  weekTokens,
   showUsage = true,
   onClearFile,
   onAddAttachment,
@@ -79,6 +83,19 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
     selectedLines ? `${activeFile}#${selectedLines}` : activeFile
   ) : '';
 
+  const formatCompactTokens = (value?: number) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return '--';
+    }
+    if (value >= 1_000_000) {
+      return `${(value / 1_000_000).toFixed(1)}M`;
+    }
+    if (value >= 1_000) {
+      return `${(value / 1_000).toFixed(1)}K`;
+    }
+    return `${Math.round(value)}`;
+  };
+
   return (
     <div className="context-bar">
       {/* Tool Icons Group */}
@@ -100,6 +117,16 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
               maxTokens={maxTokens}
               size={14}
             />
+          </div>
+        )}
+
+        {showUsage && (
+          <div
+            className="context-window-usage"
+            title={`5h: ${formatCompactTokens(last5hTokens)} tokens | Week: ${formatCompactTokens(weekTokens)} tokens`}
+          >
+            <span className="window-usage-item">5h {formatCompactTokens(last5hTokens)}</span>
+            <span className="window-usage-item">Week {formatCompactTokens(weekTokens)}</span>
           </div>
         )}
         

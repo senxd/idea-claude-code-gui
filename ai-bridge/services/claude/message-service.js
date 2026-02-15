@@ -796,7 +796,8 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
               if (streamingEnabled && !hasStreamEvents && currentText.length > lastAssistantContent.length) {
                 const delta = currentText.substring(lastAssistantContent.length);
                 if (delta) {
-                  console.log('[CONTENT_DELTA]', delta);
+                  // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+                  console.log('[CONTENT_DELTA]', JSON.stringify(delta));
                 }
                 lastAssistantContent = currentText;
               } else if (streamingEnabled && hasStreamEvents) {
@@ -806,7 +807,7 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
                 }
               } else if (!streamingEnabled) {
                 // 非流式模式：输出完整内容
-                console.log('[CONTENT]', truncateErrorContent(currentText));
+                console.log('[CONTENT]', JSON.stringify(truncateErrorContent(currentText)));
               }
             } else if (block.type === 'thinking') {
               // 输出思考过程
@@ -815,7 +816,8 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
               if (streamingEnabled && !hasStreamEvents && thinkingText.length > lastThinkingContent.length) {
                 const delta = thinkingText.substring(lastThinkingContent.length);
                 if (delta) {
-                  console.log('[THINKING_DELTA]', delta);
+                  // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+                  console.log('[THINKING_DELTA]', JSON.stringify(delta));
                 }
                 lastThinkingContent = thinkingText;
               } else if (streamingEnabled && hasStreamEvents) {
@@ -823,7 +825,7 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
                   lastThinkingContent = thinkingText;
                 }
               } else if (!streamingEnabled) {
-                console.log('[THINKING]', thinkingText);
+                console.log('[THINKING]', JSON.stringify(thinkingText));
               }
             } else if (block.type === 'tool_use') {
               console.log('[TOOL_USE]', JSON.stringify({ id: block.id, name: block.name }));
@@ -834,7 +836,8 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
           if (streamingEnabled && !hasStreamEvents && content.length > lastAssistantContent.length) {
             const delta = content.substring(lastAssistantContent.length);
             if (delta) {
-              console.log('[CONTENT_DELTA]', delta);
+              // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+              console.log('[CONTENT_DELTA]', JSON.stringify(delta));
             }
             lastAssistantContent = content;
           } else if (streamingEnabled && hasStreamEvents) {
@@ -842,7 +845,7 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
               lastAssistantContent = content;
             }
           } else if (!streamingEnabled) {
-            console.log('[CONTENT]', truncateErrorContent(content));
+            console.log('[CONTENT]', JSON.stringify(truncateErrorContent(content)));
           }
         }
       }
@@ -1113,7 +1116,7 @@ Possible causes:
         uuid: randomUUID()
       };
       console.log('[MESSAGE]', JSON.stringify(assistantMsg));
-      console.log('[CONTENT]', truncateErrorContent(errorContent[0].text));
+      console.log('[CONTENT]', JSON.stringify(truncateErrorContent(errorContent[0].text)));
 
       const resultMsg = {
         type: 'result',
@@ -1164,7 +1167,7 @@ Possible causes:
 
     for (const block of respContent) {
       if (block.type === 'text') {
-        console.log('[CONTENT]', truncateErrorContent(block.text));
+        console.log('[CONTENT]', JSON.stringify(truncateErrorContent(block.text)));
       }
     }
 
@@ -1457,10 +1460,12 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 		          // content_block_delta: 文本或 JSON 增量
 		          if (event.type === 'content_block_delta' && event.delta) {
 		            if (event.delta.type === 'text_delta' && event.delta.text) {
-		              console.log('[CONTENT_DELTA]', event.delta.text);
+		              // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+		              console.log('[CONTENT_DELTA]', JSON.stringify(event.delta.text));
 		              lastAssistantContent += event.delta.text;
 		            } else if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
-		              console.log('[THINKING_DELTA]', event.delta.thinking);
+		              // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+		              console.log('[THINKING_DELTA]', JSON.stringify(event.delta.thinking));
 		              lastThinkingContent += event.delta.thinking;
 		            }
 		          }
@@ -1503,7 +1508,8 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	              if (streamingEnabled && !hasStreamEvents && currentText.length > lastAssistantContent.length) {
 	    	                const delta = currentText.substring(lastAssistantContent.length);
 	    	                if (delta) {
-	    	                  console.log('[CONTENT_DELTA]', delta);
+	    	                  // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+	    	                  console.log('[CONTENT_DELTA]', JSON.stringify(delta));
 	    	                }
 	    	                lastAssistantContent = currentText;
 	    	              } else if (streamingEnabled && hasStreamEvents) {
@@ -1511,7 +1517,7 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	                  lastAssistantContent = currentText;
 	    	                }
 	    	              } else if (!streamingEnabled) {
-	    	                console.log('[CONTENT]', truncateErrorContent(currentText));
+	    	                console.log('[CONTENT]', JSON.stringify(truncateErrorContent(currentText)));
 	    	              }
 	    	            } else if (block.type === 'thinking') {
 	    	              const thinkingText = block.thinking || block.text || '';
@@ -1519,7 +1525,8 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	              if (streamingEnabled && !hasStreamEvents && thinkingText.length > lastThinkingContent.length) {
 	    	                const delta = thinkingText.substring(lastThinkingContent.length);
 	    	                if (delta) {
-	    	                  console.log('[THINKING_DELTA]', delta);
+	    	                  // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+	    	                  console.log('[THINKING_DELTA]', JSON.stringify(delta));
 	    	                }
 	    	                lastThinkingContent = thinkingText;
 	    	              } else if (streamingEnabled && hasStreamEvents) {
@@ -1527,7 +1534,7 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	                  lastThinkingContent = thinkingText;
 	    	                }
 	    	              } else if (!streamingEnabled) {
-	    	                console.log('[THINKING]', thinkingText);
+	    	                console.log('[THINKING]', JSON.stringify(thinkingText));
 	    	              }
 	    	            } else if (block.type === 'tool_use') {
 	    	              console.log('[TOOL_USE]', JSON.stringify({ id: block.id, name: block.name }));
@@ -1540,7 +1547,8 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	          if (streamingEnabled && !hasStreamEvents && content.length > lastAssistantContent.length) {
 	    	            const delta = content.substring(lastAssistantContent.length);
 	    	            if (delta) {
-	    	              console.log('[CONTENT_DELTA]', delta);
+	    	              // JSON encode to preserve whitespace/newlines through line-based stdout parsing
+	    	              console.log('[CONTENT_DELTA]', JSON.stringify(delta));
 	    	            }
 	    	            lastAssistantContent = content;
 	    	          } else if (streamingEnabled && hasStreamEvents) {
@@ -1548,7 +1556,7 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	              lastAssistantContent = content;
 	    	            }
 	    	          } else if (!streamingEnabled) {
-	    	            console.log('[CONTENT]', truncateErrorContent(content));
+	    	            console.log('[CONTENT]', JSON.stringify(truncateErrorContent(content)));
 	    	          }
 	    	        }
 	    	      }

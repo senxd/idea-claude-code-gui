@@ -319,6 +319,24 @@
   justify-content: center;
 }
 
+.context-window-usage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+}
+
+.window-usage-item {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--attachment-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 999px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
 .context-tool-btn {
   display: flex;
   align-items: center;

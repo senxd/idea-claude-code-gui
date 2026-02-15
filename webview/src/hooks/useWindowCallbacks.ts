@@ -47,6 +47,8 @@ export interface UseWindowCallbacksOptions {
   setUsagePercentage: React.Dispatch<React.SetStateAction<number>>;
   setUsageUsedTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
   setUsageMaxTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
+  setUsageLast5hTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
+  setUsageWeekTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
   setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setClaudePermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setSelectedClaudeModel: React.Dispatch<React.SetStateAction<string>>;
@@ -118,6 +120,8 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
     setUsagePercentage,
     setUsageUsedTokens,
     setUsageMaxTokens,
+    setUsageLast5hTokens,
+    setUsageWeekTokens,
     setPermissionMode,
     setClaudePermissionMode,
     setSelectedClaudeModel,
@@ -863,6 +867,16 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
           setUsagePercentage(safePercentage);
           setUsageUsedTokens(used);
           setUsageMaxTokens(max);
+
+          const windowUsage = data.windowUsage && typeof data.windowUsage === 'object' ? data.windowUsage : null;
+          const last5hTokens = windowUsage && typeof windowUsage.last5hTokens === 'number'
+            ? windowUsage.last5hTokens
+            : undefined;
+          const weekTokens = windowUsage && typeof windowUsage.currentWeekTokens === 'number'
+            ? windowUsage.currentWeekTokens
+            : undefined;
+          setUsageLast5hTokens(last5hTokens);
+          setUsageWeekTokens(weekTokens);
         }
       } catch (error) {
         console.error('[Frontend] Failed to parse usage update:', error);

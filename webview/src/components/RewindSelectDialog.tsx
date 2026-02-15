@@ -59,13 +59,13 @@ const RewindSelectDialog = ({
       <div className="confirm-dialog rewind-select-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="confirm-dialog-header">
           <h3 className="confirm-dialog-title">
-            <span className="rewind-icon">&#x21BA;</span> {t('rewind.selectTitle', '选择回溯点')}
+            <span className="rewind-icon">&#x21BA;</span> {t('rewind.selectTitle', 'Select Rewind Point')}
           </h3>
         </div>
         <div className="confirm-dialog-body rewind-select-body">
           {sortedMessages.length === 0 ? (
             <div className="rewind-select-empty">
-              {t('rewind.noRewindableMessages', '当前会话中没有可回溯的消息')}
+              {t('rewind.noRewindableMessages', 'No rewindable messages in this session')}
             </div>
           ) : (
             <div className="rewind-select-list">
@@ -83,7 +83,7 @@ const RewindSelectDialog = ({
                   </div>
                   <div className="rewind-select-item-meta">
                     <span className="rewind-select-affected">
-                      {item.messagesAfterCount} {t('rewind.messagesAffected', '条消息受影响')}
+                      {item.messagesAfterCount} {t('rewind.messagesAffected', 'messages affected')}
                     </span>
                   </div>
                 </div>

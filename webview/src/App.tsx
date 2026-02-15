@@ -151,9 +151,6 @@ const App = () => {
   // This eliminates re-render loops caused by value/onInput sync
   // ============================================================
   const chatInputRef = useRef<ChatInputBoxHandle>(null);
-  // Keep draftInput for backward compatibility (still used in some places)
-  // but now it's updated via debounced callback, not on every keystroke
-  const [draftInput, setDraftInput] = useState('');
 
   // ChatInputBox 相关状态
   const [currentProvider, setCurrentProvider] = useState('claude');
@@ -166,6 +163,8 @@ const App = () => {
   const [usagePercentage, setUsagePercentage] = useState(0);
   const [usageUsedTokens, setUsageUsedTokens] = useState<number | undefined>(undefined);
   const [usageMaxTokens, setUsageMaxTokens] = useState<number | undefined>(undefined);
+  const [usageLast5hTokens, setUsageLast5hTokens] = useState<number | undefined>(undefined);
+  const [usageWeekTokens, setUsageWeekTokens] = useState<number | undefined>(undefined);
   const [, setProviderConfigVersion] = useState(0);
   const [activeProviderConfig, setActiveProviderConfig] = useState<ProviderConfig | null>(null);
   const [claudeSettingsAlwaysThinkingEnabled, setClaudeSettingsAlwaysThinkingEnabled] = useState(true);
@@ -527,6 +526,8 @@ const App = () => {
     setUsagePercentage,
     setUsageUsedTokens,
     setUsageMaxTokens,
+    setUsageLast5hTokens,
+    setUsageWeekTokens,
     setPermissionMode,
     setClaudePermissionMode,
     setSelectedClaudeModel,
@@ -1554,6 +1555,8 @@ const App = () => {
             usagePercentage={usagePercentage}
             usageUsedTokens={usageUsedTokens}
             usageMaxTokens={usageMaxTokens}
+            usageLast5hTokens={usageLast5hTokens}
+            usageWeekTokens={usageWeekTokens}
             showUsage={true}
             alwaysThinkingEnabled={activeProviderConfig?.settingsConfig?.alwaysThinkingEnabled ?? claudeSettingsAlwaysThinkingEnabled}
             placeholder={sendShortcut === 'cmdEnter' ? t('chat.inputPlaceholderCmdEnter') : t('chat.inputPlaceholderEnter')}
@@ -1563,9 +1566,6 @@ const App = () => {
               setSettingsInitialTab('dependencies');
               setCurrentView('settings');
             }}
-            // Performance optimization: Keep value for initial sync, but onInput is now debounced
-            value={draftInput}
-            onInput={setDraftInput}
             onSubmit={handleSubmit}
             onStop={interruptSession}
             onModeSelect={handleModeSelect}
