@@ -2,6 +2,7 @@
  * Codex channel command handler – keeps Codex specific logic separated.
  */
 import { sendMessage as codexSendMessage } from '../services/codex/message-service.js';
+import { fetchCodexWindowUsage } from '../services/usage-window-service.js';
 
 /**
  * Execute a Codex command.
@@ -41,11 +42,21 @@ export async function handleCodexCommand(command, args, stdinData) {
       break;
     }
 
+    case 'getWindowUsage': {
+      try {
+        const usage = await fetchCodexWindowUsage();
+        console.log(JSON.stringify({ success: true, data: usage }));
+      } catch (err) {
+        console.log(JSON.stringify({ success: false, error: err?.message || String(err) }));
+      }
+      break;
+    }
+
     default:
       throw new Error(`Unknown Codex command: ${command}`);
   }
 }
 
 export function getCodexCommandList() {
-  return ['send'];
+  return ['send', 'getWindowUsage'];
 }

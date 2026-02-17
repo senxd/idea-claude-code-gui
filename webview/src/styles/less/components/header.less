@@ -33,6 +33,36 @@
     flex-shrink: 0; /* Prevent buttons from shrinking */
 }
 
+.session-title {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 14px;
+    padding-left: 8px;
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+}
+
+.session-title-input {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-width: 220px;
+    max-width: 100%;
+    outline: none;
+}
+
+.session-title-input:focus {
+    border-color: var(--accent-primary);
+}
+
 .new-chat-button {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-secondary);

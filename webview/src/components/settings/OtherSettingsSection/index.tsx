@@ -54,6 +54,8 @@ class OtherSettingsErrorBoundary extends Component<
 interface OtherSettingsSectionProps {
   historyCompletionEnabled: boolean;
   onHistoryCompletionEnabledChange: (enabled: boolean) => void;
+  compactCompletedResponsesEnabled: boolean;
+  onCompactCompletedResponsesEnabledChange: (enabled: boolean) => void;
 }
 
 interface EditorState {
@@ -65,6 +67,8 @@ interface EditorState {
 const OtherSettingsSection = ({
   historyCompletionEnabled,
   onHistoryCompletionEnabledChange,
+  compactCompletedResponsesEnabled,
+  onCompactCompletedResponsesEnabledChange,
 }: OtherSettingsSectionProps) => {
   const { t } = useTranslation();
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -292,6 +296,38 @@ const OtherSettingsSection = ({
             </div>
           )}
         </div>
+      </div>
+
+      <div className={styles.compactResponsesSection}>
+        <div className={styles.fieldHeader}>
+          <span className="codicon codicon-fold-down" />
+          <span className={styles.fieldLabel}>
+            {t('settings.other.compactCompletedResponses.label', 'Compact completed responses')}
+          </span>
+        </div>
+        <label className={styles.toggleWrapper}>
+          <input
+            type="checkbox"
+            className={styles.toggleInput}
+            checked={compactCompletedResponsesEnabled}
+            onChange={(e) => onCompactCompletedResponsesEnabledChange(e.target.checked)}
+          />
+          <span className={styles.toggleSlider} />
+          <span className={styles.toggleLabel}>
+            {compactCompletedResponsesEnabled
+              ? t('settings.other.compactCompletedResponses.enabled', 'Enabled')
+              : t('settings.other.compactCompletedResponses.disabled', 'Disabled')}
+          </span>
+        </label>
+        <small className={styles.formHint}>
+          <span className="codicon codicon-info" />
+          <span>
+            {t(
+              'settings.other.compactCompletedResponses.hint',
+              'Show final assistant answers by default and collapse execution details like commands and intermediate thinking.'
+            )}
+          </span>
+        </small>
       </div>
 
       {/* Editor Dialog */}

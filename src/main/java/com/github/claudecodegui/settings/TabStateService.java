@@ -79,11 +79,50 @@ public final class TabStateService implements PersistentStateComponent<TabStateS
     }
 
     /**
+     * 保存标签页对应的会话 ID
+     * @param tabIndex 标签页索引
+     * @param sessionId 会话 ID
+     */
+    public void saveTabSessionId(int tabIndex, String sessionId) {
+        if (sessionId != null && !sessionId.trim().isEmpty()) {
+            myState.tabSessionIds.put(tabIndex, sessionId);
+            LOG.info("[TabStateService] Saved tab sessionId: index=" + tabIndex + ", sessionId=" + sessionId);
+        }
+    }
+
+    /**
+     * 获取标签页对应的会话 ID
+     * @param tabIndex 标签页索引
+     * @return 会话 ID，若不存在返回 null
+     */
+    @Nullable
+    public String getTabSessionId(int tabIndex) {
+        return myState.tabSessionIds.get(tabIndex);
+    }
+
+    /**
+     * 移除标签页对应的会话 ID
+     * @param tabIndex 标签页索引
+     */
+    public void removeTabSessionId(int tabIndex) {
+        myState.tabSessionIds.remove(tabIndex);
+        LOG.info("[TabStateService] Removed tab sessionId for index: " + tabIndex);
+    }
+
+    /**
      * 清除所有标签页名称
      */
     public void clearAllTabNames() {
         myState.tabNames.clear();
         LOG.info("[TabStateService] Cleared all tab names");
+    }
+
+    /**
+     * 清除所有标签页会话 ID
+     */
+    public void clearAllTabSessionIds() {
+        myState.tabSessionIds.clear();
+        LOG.info("[TabStateService] Cleared all tab session IDs");
     }
 
     /**
@@ -93,6 +132,8 @@ public final class TabStateService implements PersistentStateComponent<TabStateS
     public void onTabRemoved(int removedIndex) {
         // 移除被删除标签页的名称
         myState.tabNames.remove(removedIndex);
+        // 移除被删除标签页的会话 ID
+        myState.tabSessionIds.remove(removedIndex);
 
         // 将所有大于 removedIndex 的索引减 1
         Map<Integer, String> newMap = new HashMap<>();
@@ -105,6 +146,18 @@ public final class TabStateService implements PersistentStateComponent<TabStateS
             }
         }
         myState.tabNames = newMap;
+
+        // 将所有大于 removedIndex 的会话索引减 1
+        Map<Integer, String> newSessionMap = new HashMap<>();
+        for (Map.Entry<Integer, String> entry : myState.tabSessionIds.entrySet()) {
+            int oldIndex = entry.getKey();
+            if (oldIndex > removedIndex) {
+                newSessionMap.put(oldIndex - 1, entry.getValue());
+            } else {
+                newSessionMap.put(oldIndex, entry.getValue());
+            }
+        }
+        myState.tabSessionIds = newSessionMap;
 
         // 更新标签页数量
         if (myState.tabCount > 0) {
@@ -139,6 +192,11 @@ public final class TabStateService implements PersistentStateComponent<TabStateS
          * 标签页索引到名称的映射
          */
         public Map<Integer, String> tabNames = new HashMap<>();
+
+        /**
+         * 标签页索引到会话 ID 的映射
+         */
+        public Map<Integer, String> tabSessionIds = new HashMap<>();
 
         /**
          * 标签页数量

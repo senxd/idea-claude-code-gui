@@ -20,6 +20,7 @@ import { randomUUID } from 'crypto';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { getRealHomeDir } from '../../utils/path-utils.js';
+import { fetchCodexWindowUsage } from '../usage-window-service.js';
 
 // SDK 缓存
 let codexSdk = null;
@@ -886,6 +887,8 @@ export async function sendMessage(
               session_id: currentThreadId,
               uuid: randomUUID()
             };
+
+            usageMessage.windowUsage = await fetchCodexWindowUsage();
 
             emitMessage(usageMessage);
             console.log('[DEBUG] Emitted usage statistics (Claude-compatible format):', claudeUsage);

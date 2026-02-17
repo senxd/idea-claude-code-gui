@@ -19,6 +19,9 @@ export function ChatInputBoxHeader({
   usageMaxTokens,
   usageLast5hTokens,
   usageWeekTokens,
+  usageLast5hPercent,
+  usageWeekPercent,
+  usageLast5hResetsAt,
   showUsage,
   onClearContext,
   onAddAttachment,
@@ -26,8 +29,6 @@ export function ChatInputBoxHeader({
   onClearAgent,
   hasMessages,
   onRewind,
-  statusPanelExpanded,
-  onToggleStatusPanel,
   messageQueue,
   onRemoveFromQueue,
 }: {
@@ -45,6 +46,9 @@ export function ChatInputBoxHeader({
   usageMaxTokens?: number;
   usageLast5hTokens?: number;
   usageWeekTokens?: number;
+  usageLast5hPercent?: number;
+  usageWeekPercent?: number;
+  usageLast5hResetsAt?: string;
   showUsage: boolean;
   onClearContext?: () => void;
   onAddAttachment: (files: FileList) => void;
@@ -52,8 +56,6 @@ export function ChatInputBoxHeader({
   onClearAgent: () => void;
   hasMessages: boolean;
   onRewind?: () => void;
-  statusPanelExpanded: boolean;
-  onToggleStatusPanel?: () => void;
   messageQueue?: QueuedMessage[];
   onRemoveFromQueue?: (id: string) => void;
 }) {
@@ -108,6 +110,9 @@ export function ChatInputBoxHeader({
         maxTokens={usageMaxTokens}
         last5hTokens={usageLast5hTokens}
         weekTokens={usageWeekTokens}
+        last5hPercent={usageLast5hPercent}
+        weekPercent={usageWeekPercent}
+        last5hResetsAt={usageLast5hResetsAt}
         showUsage={showUsage}
         onClearFile={onClearContext}
         onAddAttachment={onAddAttachment}
@@ -116,8 +121,6 @@ export function ChatInputBoxHeader({
         currentProvider={currentProvider}
         hasMessages={hasMessages}
         onRewind={onRewind}
-        statusPanelExpanded={statusPanelExpanded}
-        onToggleStatusPanel={onToggleStatusPanel}
       />
     </>
   );

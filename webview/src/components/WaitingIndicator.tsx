@@ -1,69 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TextShimmer } from '@/components/core/text-shimmer';
 
 interface WaitingIndicatorProps {
-  size?: number;
-  /** 开始加载的时间戳（毫秒），用于在视图切换后保持计时连续 */
   startTime?: number;
+  /** When true the label switches from "Thinking" to "Connecting". */
+  isConnecting?: boolean;
 }
 
-export const WaitingIndicator = ({ size = 18, startTime }: WaitingIndicatorProps) => {
+export const WaitingIndicator = ({ startTime, isConnecting }: WaitingIndicatorProps) => {
   const { t } = useTranslation();
-  const [dotCount, setDotCount] = useState(1);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => {
-    // 如果提供了开始时间，计算已经过去的秒数
     if (startTime) {
       return Math.floor((Date.now() - startTime) / 1000);
     }
     return 0;
   });
 
-  // 省略号动画
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setDotCount(prev => (prev % 3) + 1);
-    }, 500);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 计时器：记录当前思考轮次已经经过的秒数
   useEffect(() => {
     const timer = setInterval(() => {
       if (startTime) {
-        // 使用外部传入的开始时间计算，避免视图切换后重置
         setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
       } else {
         setElapsedSeconds(prev => prev + 1);
       }
     }, 1000);
 
-    return () => {
-      clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, [startTime]);
 
-  const dots = '.'.repeat(dotCount);
-
-  // 格式化时间显示：60秒以内显示"X秒"，超过60秒显示"X分Y秒"
   const formatElapsedTime = (seconds: number): string => {
     if (seconds < 60) {
       return `${seconds} ${t('common.seconds')}`;
     }
+
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
-    return `${t('chat.minutesAndSeconds', { minutes, seconds: remainingSeconds })}`;
+    return t('chat.minutesAndSeconds', { minutes, seconds: remainingSeconds });
   };
+
+  const label = isConnecting
+    ? t('chat.connecting', 'Connecting')
+    : t('chat.thinking', 'Thinking');
 
   return (
     <div className="waiting-indicator">
-      <span className="waiting-spinner" style={{ width: size, height: size }} />
       <span className="waiting-text">
-	        {t('chat.generatingResponse')}<span className="waiting-dots">{dots}</span>
-	        <span className="waiting-seconds">（{t('chat.elapsedTime', { time: formatElapsedTime(elapsedSeconds) })}）</span>
+        <TextShimmer className="waiting-text-shimmer" duration={1} repeat={0}>
+          {`${label} (${t('chat.elapsedTime', { time: formatElapsedTime(elapsedSeconds) })})`}
+        </TextShimmer>
       </span>
     </div>
   );
 };
 
 export default WaitingIndicator;
-

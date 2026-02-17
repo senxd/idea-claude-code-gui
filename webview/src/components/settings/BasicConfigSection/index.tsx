@@ -57,6 +57,9 @@ interface BasicConfigSectionProps {
   // 发送快捷键配置
   sendShortcut?: 'enter' | 'cmdEnter';
   onSendShortcutChange?: (shortcut: 'enter' | 'cmdEnter') => void;
+  // 输入框动画光标配置
+  animatedCursorEnabled?: boolean;
+  onAnimatedCursorEnabledChange?: (enabled: boolean) => void;
 }
 
 const BasicConfigSection = ({
@@ -84,6 +87,9 @@ const BasicConfigSection = ({
   // 发送快捷键配置
   sendShortcut = 'enter',
   onSendShortcutChange = () => {},
+  // 输入框动画光标配置
+  animatedCursorEnabled = true,
+  onAnimatedCursorEnabledChange = () => {},
 }: BasicConfigSectionProps) => {
   const { t, i18n } = useTranslation();
 
@@ -357,6 +363,32 @@ const BasicConfigSection = ({
         <small className={styles.formHint}>
           <span className="codicon codicon-info" />
           <span>{t('settings.basic.autoOpenFile.hint')}</span>
+        </small>
+      </div>
+
+      {/* 输入框动画光标配置 */}
+      <div className={styles.streamingSection}>
+        <div className={styles.fieldHeader}>
+          <span className="codicon codicon-symbol-key" />
+          <span className={styles.fieldLabel}>{t('settings.basic.animatedCursor.label')}</span>
+        </div>
+        <label className={styles.toggleWrapper}>
+          <input
+            type="checkbox"
+            className={styles.toggleInput}
+            checked={animatedCursorEnabled}
+            onChange={(e) => onAnimatedCursorEnabledChange(e.target.checked)}
+          />
+          <span className={styles.toggleSlider} />
+          <span className={styles.toggleLabel}>
+            {animatedCursorEnabled
+              ? t('settings.basic.animatedCursor.enabled')
+              : t('settings.basic.animatedCursor.disabled')}
+          </span>
+        </label>
+        <small className={styles.formHint}>
+          <span className="codicon codicon-info" />
+          <span>{t('settings.basic.animatedCursor.hint')}</span>
         </small>
       </div>
 

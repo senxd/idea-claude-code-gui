@@ -36,7 +36,6 @@ import {
 } from './utils/messageUtils';
 import { CLAUDE_MODELS, CODEX_MODELS } from './components/ChatInputBox/types';
 import type { Attachment, ChatInputBoxHandle, PermissionMode, ReasoningEffort, SelectedAgent } from './components/ChatInputBox/types';
-import { StatusPanel, StatusPanelErrorBoundary } from './components/StatusPanel';
 import { ToastContainer, type ToastMessage } from './components/Toast';
 import { ScrollControl } from './components/ScrollControl';
 import { extractMarkdownContent } from './utils/copyUtils';
@@ -110,6 +109,7 @@ const App = () => {
     return null;
   });
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
 
   // Scroll behavior management
   const {
@@ -165,6 +165,9 @@ const App = () => {
   const [usageMaxTokens, setUsageMaxTokens] = useState<number | undefined>(undefined);
   const [usageLast5hTokens, setUsageLast5hTokens] = useState<number | undefined>(undefined);
   const [usageWeekTokens, setUsageWeekTokens] = useState<number | undefined>(undefined);
+  const [usageLast5hPercent, setUsageLast5hPercent] = useState<number | undefined>(undefined);
+  const [usageWeekPercent, setUsageWeekPercent] = useState<number | undefined>(undefined);
+  const [usageLast5hResetsAt, setUsageLast5hResetsAt] = useState<string | undefined>(undefined);
   const [, setProviderConfigVersion] = useState(0);
   const [activeProviderConfig, setActiveProviderConfig] = useState<ProviderConfig | null>(null);
   const [claudeSettingsAlwaysThinkingEnabled, setClaudeSettingsAlwaysThinkingEnabled] = useState(true);
@@ -175,8 +178,12 @@ const App = () => {
   const [sendShortcut, setSendShortcut] = useState<'enter' | 'cmdEnter'>('enter');
   // 自动打开文件设置
   const [autoOpenFileEnabled, setAutoOpenFileEnabled] = useState(true);
-  // StatusPanel 展开/收起状态（默认收起，有内容时自动展开）
-  const [statusPanelExpanded, setStatusPanelExpanded] = useState(false);
+  // 输入框动画光标设置
+  const [animatedCursorEnabled, setAnimatedCursorEnabled] = useState(true);
+  // 完成后响应压缩显示设置
+  const [compactCompletedResponsesEnabled, setCompactCompletedResponsesEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('compactCompletedResponsesEnabled') === 'true';
+  });
   // 已处理的文件路径列表（Apply/Reject 后从 fileChanges 中过滤，持久化到 localStorage）
   const [processedFiles, setProcessedFiles] = useState<string[]>([]);
   // 基准消息索引（用于 Keep All 功能，只统计该索引之后的改动）
@@ -197,9 +204,22 @@ const App = () => {
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
+  const lastSyncedTabTitleRef = useRef<string | null>(null);
+  useEffect(() => {
+    lastSyncedTabTitleRef.current = null;
+  }, [currentSessionId]);
+  useEffect(() => {
+    if (messages.length === 0) {
+      lastSyncedTabTitleRef.current = null;
+      // Reset the native tab title to the default when session is cleared
+      sendBridgeEvent('update_tab_name', t('common.newSession'));
+    }
+  }, [messages.length, t]);
 
   // Context state (active file and selection) - 保留用于 ContextBar 显示
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null);
+  // Track manually dismissed context file to prevent auto-re-adding within the same chat
+  const dismissedContextFileRef = useRef<string | null>(null);
 
   // 根据当前提供商选择显示的模型
   const selectedModel = currentProvider === 'codex' ? selectedCodexModel : selectedClaudeModel;
@@ -528,6 +548,9 @@ const App = () => {
     setUsageMaxTokens,
     setUsageLast5hTokens,
     setUsageWeekTokens,
+    setUsageLast5hPercent,
+    setUsageWeekPercent,
+    setUsageLast5hResetsAt,
     setPermissionMode,
     setClaudePermissionMode,
     setSelectedClaudeModel,
@@ -538,6 +561,7 @@ const App = () => {
     setStreamingEnabledSetting,
     setSendShortcut,
     setAutoOpenFileEnabled,
+    setAnimatedCursorEnabled,
     setSdkStatus,
     setSdkStatusLoaded,
     setIsRewinding,
@@ -545,6 +569,7 @@ const App = () => {
     setCurrentRewindRequest,
     setContextInfo,
     setSelectedAgent,
+    dismissedContextFileRef,
     currentProviderRef,
     messagesContainerRef,
     isUserAtBottomRef,
@@ -586,6 +611,7 @@ const App = () => {
     if (!text.startsWith('/')) return false;
     const command = text.split(/\s+/)[0].toLowerCase();
     if (NEW_SESSION_COMMANDS.has(command)) {
+      setTitleOverride(null);
       forceCreateNewSession();
       return true;
     }
@@ -965,6 +991,30 @@ const App = () => {
     const payload = { autoOpenFileEnabled: enabled };
     sendBridgeEvent('set_auto_open_file_enabled', JSON.stringify(payload));
     addToast(enabled ? t('settings.basic.autoOpenFile.enabled') : t('settings.basic.autoOpenFile.disabled'), 'success');
+  }, [t, addToast]);
+
+  /**
+   * 处理输入框动画光标开关切换
+   */
+  const handleAnimatedCursorEnabledChange = useCallback((enabled: boolean) => {
+    setAnimatedCursorEnabled(enabled);
+    const payload = { animatedCursorEnabled: enabled };
+    sendBridgeEvent('set_animated_cursor_enabled', JSON.stringify(payload));
+    addToast(enabled ? t('settings.basic.animatedCursor.enabled') : t('settings.basic.animatedCursor.disabled'), 'success');
+  }, [t, addToast]);
+
+  /**
+   * 处理完成后响应压缩显示开关切换
+   */
+  const handleCompactCompletedResponsesEnabledChange = useCallback((enabled: boolean) => {
+    setCompactCompletedResponsesEnabled(enabled);
+    localStorage.setItem('compactCompletedResponsesEnabled', enabled.toString());
+    addToast(
+      enabled
+        ? t('settings.other.compactCompletedResponses.enabled', 'Enabled')
+        : t('settings.other.compactCompletedResponses.disabled', 'Disabled'),
+      'success'
+    );
   }, [t, addToast]);
 
   const interruptSession = () => {
@@ -1441,25 +1491,91 @@ const App = () => {
     findToolResult,
   });
 
-  // 当有内容时自动展开 StatusPanel
-  const hasStatusPanelContent = globalTodos.length > 0 || filteredFileChanges.length > 0 || subagents.length > 0;
-  useEffect(() => {
-    if (hasStatusPanelContent) {
-      setStatusPanelExpanded(true);
+  const currentHistoryTitle = useMemo(() => {
+    if (!currentSessionId || !historyData?.sessions) {
+      return null;
     }
-  }, [hasStatusPanelContent]);
+    const currentSession = historyData.sessions.find((session) => session.sessionId === currentSessionId);
+    const title = currentSession?.title?.trim();
+    return title || null;
+  }, [currentSessionId, historyData]);
+
+  useEffect(() => {
+    if (!currentSessionId || !titleOverride) {
+      return;
+    }
+    updateHistoryTitle(currentSessionId, titleOverride);
+    setTitleOverride(null);
+  }, [currentSessionId, titleOverride, updateHistoryTitle]);
 
   const sessionTitle = useMemo(() => {
+    if (titleOverride) {
+      return titleOverride;
+    }
     if (messages.length === 0) {
       return t('common.newSession');
+    }
+    if (currentHistoryTitle) {
+      return currentHistoryTitle;
     }
     const firstUserMessage = messages.find((message) => message.type === 'user');
     if (!firstUserMessage) {
       return t('common.newSession');
     }
     const text = getMessageText(firstUserMessage);
-    return text.length > 15 ? `${text.substring(0, 15)}...` : text;
-  }, [messages, t, getMessageText]);
+    return text.trim() || t('common.newSession');
+  }, [titleOverride, messages, currentHistoryTitle, t, getMessageText]);
+
+  useEffect(() => {
+    if (titleOverride || currentHistoryTitle) {
+      return;
+    }
+    const firstUserMessage = messages.find((message) => message.type === 'user');
+    if (!firstUserMessage) {
+      return;
+    }
+
+    const normalizedTitle = getMessageText(firstUserMessage).replace(/\s+/g, ' ').trim();
+    if (!normalizedTitle) {
+      return;
+    }
+
+    const titleForTab = normalizedTitle.slice(0, 50);
+    if (lastSyncedTabTitleRef.current === titleForTab) {
+      return;
+    }
+
+    const sent = sendBridgeEvent('update_tab_name', titleForTab);
+    if (sent) {
+      lastSyncedTabTitleRef.current = titleForTab;
+    }
+  }, [titleOverride, currentHistoryTitle, messages, getMessageText]);
+
+  const handleNewSessionClick = useCallback((skipConfirm: boolean) => {
+    if (skipConfirm) {
+      setTitleOverride(null);
+      forceCreateNewSession();
+      return;
+    }
+    createNewSession();
+  }, [createNewSession, forceCreateNewSession]);
+
+  const handleRenameSession = useCallback((newTitle: string) => {
+    const normalizedTitle = newTitle.replace(/\s+/g, ' ').trim().slice(0, 50);
+    if (!normalizedTitle) {
+      return;
+    }
+    const sent = sendBridgeEvent('update_tab_name', normalizedTitle);
+    if (sent) {
+      lastSyncedTabTitleRef.current = normalizedTitle;
+    }
+    if (currentSessionId) {
+      updateHistoryTitle(currentSessionId, normalizedTitle);
+      setTitleOverride(null);
+      return;
+    }
+    setTitleOverride(normalizedTitle);
+  }, [currentSessionId, updateHistoryTitle]);
 
   return (
     <>
@@ -1469,13 +1585,14 @@ const App = () => {
         sessionTitle={sessionTitle}
         t={t}
         onBack={() => setCurrentView('chat')}
-        onNewSession={createNewSession}
+        onNewSession={handleNewSessionClick}
         onNewTab={() => sendBridgeEvent('create_new_tab')}
         onHistory={() => setCurrentView('history')}
         onSettings={() => {
           setSettingsInitialTab(undefined);
           setCurrentView('settings');
         }}
+        onRenameSession={handleRenameSession}
       />
 
       {currentView === 'settings' ? (
@@ -1489,6 +1606,10 @@ const App = () => {
           onSendShortcutChange={handleSendShortcutChange}
           autoOpenFileEnabled={autoOpenFileEnabled}
           onAutoOpenFileEnabledChange={handleAutoOpenFileEnabledChange}
+          compactCompletedResponsesEnabled={compactCompletedResponsesEnabled}
+          onCompactCompletedResponsesEnabledChange={handleCompactCompletedResponsesEnabledChange}
+          animatedCursorEnabled={animatedCursorEnabled}
+          onAnimatedCursorEnabledChange={handleAnimatedCursorEnabledChange}
         />
       ) : currentView === 'chat' ? (
         <>
@@ -1505,6 +1626,7 @@ const App = () => {
             messages={mergedMessages}
             streamingActive={streamingActive}
             isThinking={isThinking}
+            compactCompletedResponses={compactCompletedResponsesEnabled}
             loading={loading}
             loadingStartTime={loadingStartTime}
             t={t}
@@ -1533,18 +1655,6 @@ const App = () => {
 
       {currentView === 'chat' && (
         <>
-          <StatusPanelErrorBoundary>
-            <StatusPanel
-              todos={globalTodos}
-              fileChanges={filteredFileChanges}
-              subagents={subagents}
-              expanded={statusPanelExpanded}
-              isStreaming={streamingActive}
-              onUndoFile={handleUndoFile}
-              onDiscardAll={handleDiscardAll}
-              onKeepAll={handleKeepAll}
-            />
-          </StatusPanelErrorBoundary>
           <div className="input-area" ref={inputAreaRef}>
           <ChatInputBox
             ref={chatInputRef}
@@ -1557,6 +1667,9 @@ const App = () => {
             usageMaxTokens={usageMaxTokens}
             usageLast5hTokens={usageLast5hTokens}
             usageWeekTokens={usageWeekTokens}
+            usageLast5hPercent={usageLast5hPercent}
+            usageWeekPercent={usageWeekPercent}
+            usageLast5hResetsAt={usageLast5hResetsAt}
             showUsage={true}
             alwaysThinkingEnabled={activeProviderConfig?.settingsConfig?.alwaysThinkingEnabled ?? claudeSettingsAlwaysThinkingEnabled}
             placeholder={sendShortcut === 'cmdEnter' ? t('chat.inputPlaceholderCmdEnter') : t('chat.inputPlaceholderEnter')}
@@ -1577,6 +1690,7 @@ const App = () => {
             streamingEnabled={streamingEnabledSetting}
             onStreamingEnabledChange={handleStreamingEnabledChange}
             sendShortcut={sendShortcut}
+            animatedCursorEnabled={animatedCursorEnabled}
             selectedAgent={selectedAgent}
             onAgentSelect={handleAgentSelect}
             activeFile={contextInfo?.file}
@@ -1585,15 +1699,27 @@ const App = () => {
                   ? `L${contextInfo.startLine}`
                   : `L${contextInfo.startLine}-${contextInfo.endLine}`)
               : undefined}
-            onClearContext={() => setContextInfo(null)}
+            onClearContext={() => {
+              // Record the dismissed file so auto-add won't re-add it
+              if (contextInfo?.file) {
+                dismissedContextFileRef.current = contextInfo.file;
+              }
+              setContextInfo(null);
+            }}
             onOpenAgentSettings={() => {
               setSettingsInitialTab('agents');
               setCurrentView('settings');
             }}
             hasMessages={messages.length > 0}
             onRewind={handleOpenRewindSelectDialog}
-            statusPanelExpanded={statusPanelExpanded}
-            onToggleStatusPanel={() => setStatusPanelExpanded(!statusPanelExpanded)}
+            statusPanelExpanded={true}
+            statusPanelTodos={globalTodos}
+            statusPanelFileChanges={filteredFileChanges}
+            statusPanelSubagents={subagents}
+            statusPanelIsStreaming={streamingActive}
+            onStatusPanelUndoFile={handleUndoFile}
+            onStatusPanelDiscardAll={handleDiscardAll}
+            onStatusPanelKeepAll={handleKeepAll}
             addToast={addToast}
             messageQueue={messageQueue}
             onRemoveFromQueue={dequeueMessage}
@@ -1610,7 +1736,10 @@ const App = () => {
         message={t('chat.confirmNewSession')}
         confirmText={t('common.confirm')}
         cancelText={t('common.cancel')}
-        onConfirm={handleConfirmNewSession}
+        onConfirm={() => {
+          setTitleOverride(null);
+          handleConfirmNewSession();
+        }}
         onCancel={handleCancelNewSession}
       />
 
@@ -1620,7 +1749,10 @@ const App = () => {
         message={t('chat.confirmInterrupt')}
         confirmText={t('common.confirm')}
         cancelText={t('common.cancel')}
-        onConfirm={handleConfirmInterrupt}
+        onConfirm={() => {
+          setTitleOverride(null);
+          handleConfirmInterrupt();
+        }}
         onCancel={handleCancelInterrupt}
       />
 

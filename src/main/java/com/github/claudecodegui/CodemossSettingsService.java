@@ -449,6 +449,58 @@ public class CodemossSettingsService {
         LOG.info("[CodemossSettings] Set auto open file enabled to " + enabled + " for project: " + projectPath);
     }
 
+    // ==================== Animated Cursor 配置管理 ====================
+
+    /**
+     * 获取输入框动画光标配置
+     * @param projectPath 项目路径
+     * @return 是否启用动画光标
+     */
+    public boolean getAnimatedCursorEnabled(String projectPath) throws IOException {
+        JsonObject config = readConfig();
+
+        if (!config.has("animatedCursor")) {
+            return true;
+        }
+
+        JsonObject animatedCursor = config.getAsJsonObject("animatedCursor");
+
+        if (projectPath != null && animatedCursor.has(projectPath)) {
+            return animatedCursor.get(projectPath).getAsBoolean();
+        }
+
+        if (animatedCursor.has("default")) {
+            return animatedCursor.get("default").getAsBoolean();
+        }
+
+        return true;
+    }
+
+    /**
+     * 设置输入框动画光标配置
+     * @param projectPath 项目路径
+     * @param enabled 是否启用
+     */
+    public void setAnimatedCursorEnabled(String projectPath, boolean enabled) throws IOException {
+        JsonObject config = readConfig();
+
+        JsonObject animatedCursor;
+        if (config.has("animatedCursor")) {
+            animatedCursor = config.getAsJsonObject("animatedCursor");
+        } else {
+            animatedCursor = new JsonObject();
+            config.add("animatedCursor", animatedCursor);
+        }
+
+        if (projectPath != null) {
+            animatedCursor.addProperty(projectPath, enabled);
+        }
+        animatedCursor.addProperty("default", enabled);
+
+        writeConfig(config);
+        LOG.info("[CodemossSettings] Set animated cursor enabled to " + enabled + " for project: " + projectPath);
+    }
+
     // ==================== Provider 管理 ====================
 
     public List<JsonObject> getClaudeProviders() throws IOException {

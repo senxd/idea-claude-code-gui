@@ -12,6 +12,9 @@ interface ContextBarProps {
   maxTokens?: number;
   last5hTokens?: number;
   weekTokens?: number;
+  last5hPercent?: number;
+  weekPercent?: number;
+  last5hResetsAt?: string;
   showUsage?: boolean;
   onClearFile?: () => void;
   onAddAttachment?: (files: FileList) => void;
@@ -23,10 +26,6 @@ interface ContextBarProps {
   hasMessages?: boolean;
   /** Rewind callback */
   onRewind?: () => void;
-  /** Whether StatusPanel is expanded */
-  statusPanelExpanded?: boolean;
-  /** Toggle StatusPanel expand/collapse */
-  onToggleStatusPanel?: () => void;
 }
 
 export const ContextBar: React.FC<ContextBarProps> = memo(({
@@ -37,6 +36,9 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
   maxTokens,
   last5hTokens,
   weekTokens,
+  last5hPercent,
+  weekPercent,
+  last5hResetsAt,
   showUsage = true,
   onClearFile,
   onAddAttachment,
@@ -45,8 +47,6 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
   currentProvider = 'claude',
   hasMessages = false,
   onRewind,
-  statusPanelExpanded = true,
-  onToggleStatusPanel,
 }) => {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +82,8 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
   const fullDisplayText = activeFile ? (
     selectedLines ? `${activeFile}#${selectedLines}` : activeFile
   ) : '';
+  const hasRightTools = currentProvider === 'claude' && Boolean(onRewind);
+  const hasContentAfterWindowUsage = Boolean(selectedAgent) || Boolean(displayText) || hasRightTools;
 
   const formatCompactTokens = (value?: number) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -94,6 +96,26 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
       return `${(value / 1_000).toFixed(1)}K`;
     }
     return `${Math.round(value)}`;
+  };
+
+  const formatWindowUsagePercent = (value?: number) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return '--%';
+    }
+
+    const percentage = Math.max(0, Math.min(100, value));
+    return percentage >= 10 ? `${Math.round(percentage)}%` : `${percentage.toFixed(1)}%`;
+  };
+
+  const formatResetTime = (isoString?: string): string | undefined => {
+    if (!isoString) return undefined;
+    try {
+      const resetDate = new Date(isoString);
+      if (Number.isNaN(resetDate.getTime())) return undefined;
+      return resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return undefined;
+    }
   };
 
   return (
@@ -120,16 +142,6 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
           </div>
         )}
 
-        {showUsage && (
-          <div
-            className="context-window-usage"
-            title={`5h: ${formatCompactTokens(last5hTokens)} tokens | Week: ${formatCompactTokens(weekTokens)} tokens`}
-          >
-            <span className="window-usage-item">5h {formatCompactTokens(last5hTokens)}</span>
-            <span className="window-usage-item">Week {formatCompactTokens(weekTokens)}</span>
-          </div>
-        )}
-        
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
@@ -139,9 +151,23 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
           onChange={handleFileChange}
           style={{ display: 'none' }}
         />
-        
+
         <div className="context-tool-divider" />
       </div>
+
+      {showUsage && (() => {
+        const resetTime = formatResetTime(last5hResetsAt);
+        const fiveHourTooltip = resetTime
+          ? `5h: ${formatCompactTokens(last5hTokens)} tokens (${formatWindowUsagePercent(last5hPercent)}) | Resets at ${resetTime}`
+          : `5h: ${formatCompactTokens(last5hTokens)} tokens (${formatWindowUsagePercent(last5hPercent)})`;
+        return (
+          <div className="context-window-usage">
+            <span className="window-usage-item" title={fiveHourTooltip}>5h {formatWindowUsagePercent(last5hPercent)}</span>
+            <span className="window-usage-item" title={`Week: ${formatCompactTokens(weekTokens)} tokens (${formatWindowUsagePercent(weekPercent)})`}>Week {formatWindowUsagePercent(weekPercent)}</span>
+            {hasContentAfterWindowUsage && <div className="context-tool-divider" />}
+          </div>
+        );
+      })()}
 
       {/* Selected Agent Chip */}
       {selectedAgent && (
@@ -200,19 +226,8 @@ export const ContextBar: React.FC<ContextBarProps> = memo(({
         </div>
       )}
 
-      {/* Right side tools - StatusPanel toggle and Rewind button */}
+      {/* Right side tools */}
       <div className="context-tools-right">
-        {/* StatusPanel expand/collapse toggle - always visible */}
-        {onToggleStatusPanel && (
-          <button
-            className={`context-tool-btn status-panel-toggle has-tooltip ${statusPanelExpanded ? 'expanded' : 'collapsed'}`}
-            onClick={onToggleStatusPanel}
-            data-tooltip={statusPanelExpanded ? t('statusPanel.collapse') : t('statusPanel.expand')}
-          >
-            <span className={`codicon ${statusPanelExpanded ? 'codicon-chevron-down' : 'codicon-layers'}`} />
-          </button>
-        )}
-
         {/* Rewind button */}
         {currentProvider === 'claude' && onRewind && (
           <button

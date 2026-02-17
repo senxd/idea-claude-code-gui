@@ -20,6 +20,8 @@ interface BashToolGroupBlockProps {
   }>;
   /** Denied tool IDs set, passed from parent instead of global window */
   deniedToolIds?: Set<string>;
+  /** Whether current assistant message is actively streaming */
+  isStreaming?: boolean;
 }
 
 /** Max visible items before scroll (3.5 items) */
@@ -79,14 +81,18 @@ function truncateCommand(command: string, maxLength = 60): string {
   return command.slice(0, maxLength) + '...';
 }
 
-const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) => {
+const BashToolGroupBlock = ({ items, deniedToolIds, isStreaming = false }: BashToolGroupBlockProps) => {
+  void isStreaming;
   // Default to expanded
   const [expanded, setExpanded] = useState(true);
   // Track which item detail is expanded
   const [expandedItemIndex, setExpandedItemIndex] = useState<number | null>(null);
+  const [summaryTransitioning, setSummaryTransitioning] = useState(false);
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
   const prevItemCountRef = useRef(0);
+  const completionCollapseTimeoutRef = useRef<number | null>(null);
+  const summaryTransitionTimeoutRef = useRef<number | null>(null);
 
   // Parse all items
   const bashItems = useMemo(() => {
@@ -107,6 +113,47 @@ const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) =
   const completedCount = bashItems.filter((item) => item.isCompleted).length;
   const errorCount = bashItems.filter((item) => item.isError).length;
   const totalCount = bashItems.length;
+  const allCompleted = totalCount > 0 && completedCount === totalCount;
+
+  // Auto-collapse once when all commands become completed
+  // (including non-streaming responses that render in a completed state).
+  const prevAllCompletedRef = useRef(false);
+  useEffect(() => {
+    const becameAllCompleted = !prevAllCompletedRef.current && allCompleted;
+    if (becameAllCompleted) {
+      setSummaryTransitioning(true);
+      if (summaryTransitionTimeoutRef.current !== null) {
+        window.clearTimeout(summaryTransitionTimeoutRef.current);
+      }
+      summaryTransitionTimeoutRef.current = window.setTimeout(() => {
+        setSummaryTransitioning(false);
+        summaryTransitionTimeoutRef.current = null;
+      }, 460);
+      if (completionCollapseTimeoutRef.current !== null) {
+        window.clearTimeout(completionCollapseTimeoutRef.current);
+      }
+      // Keep expanded briefly to play the completion transition, then collapse.
+      completionCollapseTimeoutRef.current = window.setTimeout(() => {
+        setExpanded(false);
+        completionCollapseTimeoutRef.current = null;
+      }, 850);
+    }
+    if (!allCompleted && summaryTransitioning) {
+      setSummaryTransitioning(false);
+    }
+    prevAllCompletedRef.current = allCompleted;
+  }, [allCompleted, summaryTransitioning]);
+
+  useEffect(() => {
+    return () => {
+      if (completionCollapseTimeoutRef.current !== null) {
+        window.clearTimeout(completionCollapseTimeoutRef.current);
+      }
+      if (summaryTransitionTimeoutRef.current !== null) {
+        window.clearTimeout(summaryTransitionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Handle item click to toggle detail
   const handleItemClick = useCallback((index: number, e: React.MouseEvent) => {
@@ -134,6 +181,7 @@ const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) =
 
   // Enable scrolling if there are many items OR if an item is expanded (content might overflow)
   const overflowY = (needsScroll || expandedItemIndex !== null) ? 'auto' : 'hidden';
+  const timelineMaxHeight = expanded ? `${listHeight + 16}px` : '0px';
 
   // Progress summary text
   const getProgressSummary = () => {
@@ -146,10 +194,11 @@ const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) =
       );
     }
     if (completedCount === totalCount) {
+      const label = t('tools.bashGroupAllCompleted');
       return (
-        <span className="bash-group-progress completed">
+        <span className={`bash-group-progress completed ${summaryTransitioning ? 'summary-transition' : ''}`}>
           <span className="codicon codicon-check" style={{ fontSize: '12px', marginRight: '4px' }} />
-          {t('tools.bashGroupAllCompleted')}
+          {label}
         </span>
       );
     }
@@ -175,11 +224,16 @@ const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) =
             {t('tools.bashGroupBatchRun')} ({totalCount})
           </span>
         </div>
-        <div className="bash-group-summary">{getProgressSummary()}</div>
+        <div className="bash-group-summary tool-right-entrance" style={{ ['--tool-right-order' as string]: 0 }}>
+          {getProgressSummary()}
+        </div>
       </div>
 
-      {/* Timeline list - visible when expanded */}
-      {expanded && (
+      {/* Timeline list with animated open/close */}
+      <div
+        className={`bash-group-timeline-shell ${expanded ? 'expanded' : 'collapsed'}`}
+        style={{ maxHeight: timelineMaxHeight }}
+      >
         <div
           ref={listRef}
           className="bash-group-timeline"
@@ -189,31 +243,30 @@ const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) =
           }}
         >
           {bashItems.map((item, index) => {
-            const isLast = index === bashItems.length - 1;
             const isItemExpanded = expandedItemIndex === index;
 
             return (
-              <div key={item.toolId || `bash-item-${index}`} className="bash-timeline-item">
-                {/* Timeline connector - fixed gray */}
-                <div className="bash-timeline-connector">
-                  <div className={`bash-timeline-line ${isLast ? 'last' : ''}`} />
-                  <div className="bash-timeline-node" />
-                </div>
-
+              <div
+                key={item.toolId || `bash-item-${index}`}
+                className="bash-timeline-item bash-timeline-item-enter"
+                style={{
+                  ['--bash-item-order' as string]: index,
+                }}
+              >
                 {/* Item content */}
                 <div
                   className={`bash-timeline-content ${isItemExpanded ? 'expanded' : ''}`}
                   onClick={(e) => handleItemClick(index, e)}
                 >
                   <div className="bash-timeline-row">
-                    <span className="bash-timeline-description">
-                      {item.description || truncateCommand(item.command)}
-                    </span>
                     <div
-                      className={`tool-status-indicator ${
+                      className={`tool-status-indicator bash-timeline-status ${
                         item.isError ? 'error' : item.isCompleted ? 'completed' : 'pending'
                       }`}
                     />
+                    <span className="bash-timeline-description">
+                      {item.description || truncateCommand(item.command)}
+                    </span>
                   </div>
 
                   {/* Expanded detail */}
@@ -238,7 +291,7 @@ const BashToolGroupBlock = ({ items, deniedToolIds }: BashToolGroupBlockProps) =
             );
           })}
         </div>
-      )}
+      </div>
     </div>
   );
 };

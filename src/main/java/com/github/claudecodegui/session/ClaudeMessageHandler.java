@@ -4,6 +4,7 @@ import com.github.claudecodegui.provider.common.MessageCallback;
 import com.github.claudecodegui.provider.common.SDKResult;
 import com.github.claudecodegui.ClaudeSession.Message;
 import com.github.claudecodegui.notifications.ClaudeNotifier;
+import com.github.claudecodegui.util.SdkWindowUsageExtractor;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -496,6 +497,8 @@ public class ClaudeMessageHandler implements MessageCallback {
                 ClaudeNotifier.setTokenUsage(project, usedTokens, maxTokens);
             }
 
+            JsonObject sdkWindowUsage = SdkWindowUsageExtractor.extractFromResult(resultJson);
+
             // 如果当前消息的raw中usage为0，则用result中的usage进行更新
             if (currentAssistantMessage != null && currentAssistantMessage.raw != null) {
                 JsonObject message = currentAssistantMessage.raw.has("message") && currentAssistantMessage.raw.get("message").isJsonObject()
@@ -519,9 +522,17 @@ public class ClaudeMessageHandler implements MessageCallback {
                     JsonObject resultUsage = resultJson.getAsJsonObject("usage");
                     if (message != null) {
                         message.add("usage", resultUsage);
-                        callbackHandler.notifyMessageUpdate(state.getMessages());
                         LOG.debug("Updated assistant message usage from result message");
                     }
+                }
+
+                if (sdkWindowUsage != null && message != null) {
+                    message.add("windowUsage", sdkWindowUsage);
+                    LOG.debug("Attached SDK window usage to assistant message");
+                }
+
+                if ((needsUsageUpdate && resultJson.has("usage")) || sdkWindowUsage != null) {
+                    callbackHandler.notifyMessageUpdate(state.getMessages());
                 }
             }
         } catch (Exception e) {

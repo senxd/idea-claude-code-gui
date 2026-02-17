@@ -438,6 +438,12 @@ export interface ChatInputBoxProps {
   usageLast5hTokens?: number;
   /** Current week usage (tokens) */
   usageWeekTokens?: number;
+  /** Rolling 5-hour usage percentage from SDK */
+  usageLast5hPercent?: number;
+  /** Current week usage percentage from SDK */
+  usageWeekPercent?: number;
+  /** ISO timestamp when the 5-hour usage window resets */
+  usageLast5hResetsAt?: string;
   /** Whether to show usage */
   showUsage?: boolean;
   /** Whether always thinking is enabled */
@@ -491,6 +497,8 @@ export interface ChatInputBoxProps {
 
   /** Send shortcut setting: 'enter' = Enter sends | 'cmdEnter' = Cmd/Ctrl+Enter sends */
   sendShortcut?: 'enter' | 'cmdEnter';
+  /** Whether animated cursor is enabled for input box */
+  animatedCursorEnabled?: boolean;
 
   /** Currently selected agent */
   selectedAgent?: SelectedAgent | null;
@@ -508,8 +516,21 @@ export interface ChatInputBoxProps {
 
   /** Whether StatusPanel is expanded */
   statusPanelExpanded?: boolean;
-  /** Toggle StatusPanel expand/collapse */
-  onToggleStatusPanel?: () => void;
+
+  /** StatusPanel todos */
+  statusPanelTodos?: import('../../types').TodoItem[];
+  /** StatusPanel file changes */
+  statusPanelFileChanges?: import('../../types').FileChangeSummary[];
+  /** StatusPanel subagents */
+  statusPanelSubagents?: import('../../types').SubagentInfo[];
+  /** StatusPanel streaming state */
+  statusPanelIsStreaming?: boolean;
+  /** StatusPanel undo file callback */
+  onStatusPanelUndoFile?: (filePath: string) => void;
+  /** StatusPanel discard all callback */
+  onStatusPanelDiscardAll?: () => void;
+  /** StatusPanel keep all callback */
+  onStatusPanelKeepAll?: () => void;
 
   /** SDK installed status (disable input when not installed) */
   sdkInstalled?: boolean;

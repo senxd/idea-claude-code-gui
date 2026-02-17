@@ -86,6 +86,7 @@
     "attachmentFile": "[Attachment: {{fileName}}]",
     "unknownFile": "Unknown file",
     "attachmentsUploaded": "[Attachments Uploaded]",
+    "connecting": "Connecting",
     "streamingConnected": "Claude connected, understanding your question"
   },
   "settings": {
@@ -149,6 +150,12 @@
         "enabled": "Enabled",
         "disabled": "Disabled",
         "hint": "When enabled, files will automatically open in the editor when selected in the project tree. When disabled, manual action is required to open files."
+      },
+      "animatedCursor": {
+        "label": "Animated Input Cursor",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "hint": "When enabled, the chat input caret uses smooth movement and blink animation inspired by editor cursors."
       },
       "sendShortcut": {
         "label": "Send Shortcut",
@@ -805,8 +812,10 @@
     "subagentStatusRunning": "Running",
     "subagentStatusCompleted": "Completed",
     "subagentStatusError": "Error",
-    "subagentDescriptionLabel": "Current task",
+    "subagentDescriptionLabel": "Task",
+    "subagentLastActionLabel": "Last action",
     "subagentPromptLabel": "Prompt",
+    "subagentThinking": "Thinking...",
     "subagentNoDescription": "No subagent details",
     "noFileChanges": "No file changes",
     "showDiff": "Show Diff",

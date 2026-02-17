@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, memo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, memo, useEffect, useRef, type CSSProperties } from 'react';
 import type { TFunction } from 'i18next';
 import type { ClaudeMessage, ClaudeContentBlock, ToolResultBlock } from '../../types';
 
@@ -22,6 +22,8 @@ export interface MessageItemProps {
   isLast: boolean;
   streamingActive: boolean;
   isThinking: boolean;
+  compactCompletedResponses: boolean;
+  loadingStartTime?: number;
   t: TFunction;
   getMessageText: (message: ClaudeMessage) => string;
   getContentBlocks: (message: ClaudeMessage) => ClaudeContentBlock[];
@@ -83,6 +85,55 @@ const CopyButton = memo(function CopyButton({
 
 function isToolBlockOfType(block: ClaudeContentBlock, toolNames: Set<string>): boolean {
   return block.type === 'tool_use' && isToolName(block.name, toolNames);
+}
+
+function normalizeActionText(text: string | undefined): string {
+  return String(text ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function prettifyToolName(name: string): string {
+  return name
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Extract the most recent action summary from a subagent nested block list */
+function getLatestActionFromBlocks(blocks: ClaudeContentBlock[]): string {
+  let latest = '';
+
+  for (const block of blocks) {
+    if (block.type !== 'tool_use') {
+      continue;
+    }
+
+    const input = (block.input ?? {}) as Record<string, unknown>;
+    const toolName = prettifyToolName(String(block.name ?? '')) || 'tool';
+    const tryKeys = [
+      'description',
+      'command',
+      'query',
+      'q',
+      'path',
+      'file_path',
+      'url',
+      'pattern',
+      'tool',
+    ];
+
+    let detail = '';
+    for (const key of tryKeys) {
+      const value = input[key];
+      if (typeof value === 'string' && value.trim()) {
+        detail = normalizeActionText(value);
+        break;
+      }
+    }
+
+    latest = detail ? `${toolName}: ${detail}` : toolName;
+  }
+
+  return latest;
 }
 
 function groupBlocks(blocks: ClaudeContentBlock[]): GroupedBlock[] {
@@ -246,6 +297,8 @@ export const MessageItem = memo(function MessageItem({
   isLast,
   streamingActive,
   isThinking,
+  compactCompletedResponses,
+  loadingStartTime,
   t,
   getMessageText,
   getContentBlocks,
@@ -253,7 +306,7 @@ export const MessageItem = memo(function MessageItem({
   extractMarkdownContent,
 }: MessageItemProps): React.ReactElement {
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
-  const [showStreamingConnectHint, setShowStreamingConnectHint] = useState(false);
+  const [showExecutionDetails, setShowExecutionDetails] = useState(false);
 
   // Track timeout to properly cleanup on unmount
   const copyTimeoutRef = useRef<number | null>(null);
@@ -270,7 +323,13 @@ export const MessageItem = memo(function MessageItem({
   }, []);
 
   const isThinkingExpanded = useCallback(
-    (blockKey: string) => Boolean(expandedThinking[blockKey]),
+    (blockKey: string) => {
+      if (Object.prototype.hasOwnProperty.call(expandedThinking, blockKey)) {
+        return Boolean(expandedThinking[blockKey]);
+      }
+      // Default-expand newly created thinking blocks.
+      return true;
+    },
     [expandedThinking]
   );
 
@@ -326,20 +385,28 @@ export const MessageItem = memo(function MessageItem({
 
   // Memoize blocks and grouped blocks to avoid recalculation on every render
   const blocks = useMemo(() => getContentBlocks(message), [message, getContentBlocks]);
+  // Default-expand newly created root thinking blocks.
+  useEffect(() => {
+    setExpandedThinking((prev) => {
+      let changed = false;
+      const next: Record<string, boolean> = { ...prev };
+      blocks.forEach((block, index) => {
+        if (block.type !== 'thinking') return;
+        const key = `root-${index}`;
+        if (!(key in next)) {
+          next[key] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [blocks]);
+
   const isEmptyStreamingPlaceholder =
     message.type === 'assistant' &&
     isMessageStreaming &&
     blocks.length === 0 &&
     !(message.content && message.content.trim().length > 0);
-
-  useEffect(() => {
-    if (!isEmptyStreamingPlaceholder) {
-      setShowStreamingConnectHint(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowStreamingConnectHint(true), 350);
-    return () => window.clearTimeout(timer);
-  }, [isEmptyStreamingPlaceholder]);
 
   // Ref to track the last auto-expanded thinking block index to avoid overriding user interaction
   const lastAutoExpandedIndexRef = useRef<number>(-1);
@@ -372,6 +439,63 @@ export const MessageItem = memo(function MessageItem({
   }, [blocks, isMessageStreaming]);
 
   const groupedBlocks = useMemo(() => groupBlocksWithSubagents(blocks), [blocks]);
+  const shouldCompactCompletedAssistant =
+    compactCompletedResponses &&
+    message.type === 'assistant' &&
+    !isMessageStreaming;
+
+  useEffect(() => {
+    if (shouldCompactCompletedAssistant) {
+      setShowExecutionDetails(false);
+    }
+  }, [shouldCompactCompletedAssistant, messageIndex]);
+
+  const isExecutionDetailGroup = useCallback((grouped: GroupedBlock): boolean => {
+    if (
+      grouped.type === 'read_group' ||
+      grouped.type === 'edit_group' ||
+      grouped.type === 'bash_group'
+    ) {
+      return true;
+    }
+
+    if (grouped.type === 'single') {
+      return grouped.block.type === 'thinking' || grouped.block.type === 'tool_use';
+    }
+
+    return false;
+  }, []);
+
+  const [primaryGroups, executionDetailGroups, subagentGroups] = useMemo((): [GroupedBlock[], GroupedBlock[], GroupedBlock[]] => {
+    if (!shouldCompactCompletedAssistant) {
+      return [groupedBlocks, [], []];
+    }
+
+    const primary: GroupedBlock[] = [];
+    const details: GroupedBlock[] = [];
+    const subagents: GroupedBlock[] = [];
+
+    for (let i = 0; i < groupedBlocks.length; i++) {
+      const grouped = groupedBlocks[i];
+      if (grouped.type === 'subagent_group') {
+        subagents.push(grouped);
+      } else if (isExecutionDetailGroup(grouped)) {
+        details.push(grouped);
+      } else {
+        // Check if this text block is followed by an execution detail block;
+        // if so, it describes that tool call and belongs in execution details.
+        const next = groupedBlocks[i + 1];
+        if (next && isExecutionDetailGroup(next)) {
+          details.push(grouped);
+        } else {
+          primary.push(grouped);
+        }
+      }
+    }
+
+    return [primary, details, subagents];
+  }, [groupedBlocks, isExecutionDetailGroup, shouldCompactCompletedAssistant]);
+
   const hasRenderableContent = useMemo(() => {
     return blocks.some((block) => {
       if (block.type === 'tool_use') {
@@ -394,7 +518,17 @@ export const MessageItem = memo(function MessageItem({
     keyPrefix: string,
     nested = false
   ) => {
-    const wrapperClass = nested ? 'content-block content-block-subagent' : 'content-block';
+    const shouldApplyStreamingBlockEntrance =
+      isMessageStreaming &&
+      !(grouped.type === 'single' && grouped.block.type === 'thinking');
+    const wrapperClass = [
+      nested ? 'content-block content-block-subagent' : 'content-block',
+      shouldApplyStreamingBlockEntrance ? 'streaming-block-entrance' : '',
+    ].filter(Boolean).join(' ');
+    const getStreamingEntranceStyle = (order: number): CSSProperties | undefined => {
+      if (!shouldApplyStreamingBlockEntrance) return undefined;
+      return { ['--stream-order' as string]: Math.max(0, order) } as CSSProperties;
+    };
 
     if (grouped.type === 'read_group') {
       const readItems = grouped.blocks.map((b) => {
@@ -408,15 +542,23 @@ export const MessageItem = memo(function MessageItem({
 
       if (readItems.length === 1) {
         return (
-          <div key={`${keyPrefix}-readgroup-${grouped.startIndex}`} className={wrapperClass}>
+          <div
+            key={`${keyPrefix}-readgroup-${grouped.startIndex}`}
+            className={wrapperClass}
+            style={getStreamingEntranceStyle(grouped.startIndex)}
+          >
             <ReadToolBlock input={readItems[0].input} />
           </div>
         );
       }
 
       return (
-        <div key={`${keyPrefix}-readgroup-${grouped.startIndex}`} className={wrapperClass}>
-          <ReadToolGroupBlock items={readItems} />
+        <div
+          key={`${keyPrefix}-readgroup-${grouped.startIndex}`}
+          className={wrapperClass}
+          style={getStreamingEntranceStyle(grouped.startIndex)}
+        >
+          <ReadToolGroupBlock items={readItems} isStreaming={isMessageStreaming} />
         </div>
       );
     }
@@ -433,7 +575,11 @@ export const MessageItem = memo(function MessageItem({
 
       if (editItems.length === 1) {
         return (
-          <div key={`${keyPrefix}-editgroup-${grouped.startIndex}`} className={wrapperClass}>
+          <div
+            key={`${keyPrefix}-editgroup-${grouped.startIndex}`}
+            className={wrapperClass}
+            style={getStreamingEntranceStyle(grouped.startIndex)}
+          >
             <EditToolBlock
               name={editItems[0].name}
               input={editItems[0].input}
@@ -444,8 +590,12 @@ export const MessageItem = memo(function MessageItem({
       }
 
       return (
-        <div key={`${keyPrefix}-editgroup-${grouped.startIndex}`} className={wrapperClass}>
-          <EditToolGroupBlock items={editItems} />
+        <div
+          key={`${keyPrefix}-editgroup-${grouped.startIndex}`}
+          className={wrapperClass}
+          style={getStreamingEntranceStyle(grouped.startIndex)}
+        >
+          <EditToolGroupBlock items={editItems} isStreaming={isMessageStreaming} />
         </div>
       );
     }
@@ -463,7 +613,11 @@ export const MessageItem = memo(function MessageItem({
 
       if (bashItems.length === 1) {
         return (
-          <div key={`${keyPrefix}-bashgroup-${grouped.startIndex}`} className={wrapperClass}>
+          <div
+            key={`${keyPrefix}-bashgroup-${grouped.startIndex}`}
+            className={wrapperClass}
+            style={getStreamingEntranceStyle(grouped.startIndex)}
+          >
             <BashToolBlock
               name={bashItems[0].name}
               input={bashItems[0].input}
@@ -475,8 +629,16 @@ export const MessageItem = memo(function MessageItem({
       }
 
       return (
-        <div key={`${keyPrefix}-bashgroup-${grouped.startIndex}`} className={wrapperClass}>
-          <BashToolGroupBlock items={bashItems} deniedToolIds={window.__deniedToolIds} />
+        <div
+          key={`${keyPrefix}-bashgroup-${grouped.startIndex}`}
+          className={wrapperClass}
+          style={getStreamingEntranceStyle(grouped.startIndex)}
+        >
+          <BashToolGroupBlock
+            items={bashItems}
+            deniedToolIds={window.__deniedToolIds}
+            isStreaming={isMessageStreaming}
+          />
         </div>
       );
     }
@@ -488,16 +650,22 @@ export const MessageItem = memo(function MessageItem({
     const { block, originalIndex: blockIndex } = grouped;
     const thinkingKey = nested ? `${keyPrefix}-thinking-${blockIndex}` : `root-${blockIndex}`;
     return (
-      <div key={`${keyPrefix}-${blockIndex}`} className={wrapperClass}>
+      <div
+        key={`${keyPrefix}-${blockIndex}`}
+        className={wrapperClass}
+        style={getStreamingEntranceStyle(blockIndex)}
+      >
         <ContentBlockRenderer
           block={block}
           messageIndex={messageIndex}
           messageType={message.type}
+          messageTimestamp={message.timestamp}
           isStreaming={isMessageStreaming}
           isThinkingExpanded={isThinkingExpanded(thinkingKey)}
           isThinking={isThinking}
           isLastMessage={isLast}
           isLastBlock={blockIndex === blocks.length - 1}
+          loadingStartTime={loadingStartTime}
           t={t}
           onToggleThinking={() => toggleThinking(thinkingKey)}
           findToolResult={findToolResult}
@@ -512,14 +680,12 @@ export const MessageItem = memo(function MessageItem({
     }
 
     if (isEmptyStreamingPlaceholder) {
-      return (
-        <div className="streaming-connect-status">
-          <span className="streaming-connect-text">{t('chat.streamingConnected')}</span>
-        </div>
-      );
+      // The WaitingIndicator (rendered by MessageList) handles the
+      // "Thinking → Connecting" transition, so nothing to render here.
+      return null;
     }
 
-    return groupedBlocks.map((grouped, index) => {
+    const renderGroupList = (groups: GroupedBlock[]) => groups.map((grouped, index) => {
       if (grouped.type !== 'subagent_group') {
         return renderStandardGroupedBlock(grouped, `${messageIndex}`, false);
       }
@@ -531,14 +697,25 @@ export const MessageItem = memo(function MessageItem({
       const taskResult = findToolResult(taskTool.id, messageIndex);
       const status = !taskResult ? 'running' : taskResult.is_error ? 'error' : 'completed';
       const subagentKey = `${messageIndex}-subagent-${grouped.taskIndex}-${index}`;
-      const expanded = isSubagentExpanded(subagentKey, status === 'running' || isMessageStreaming);
+      const expanded = isSubagentExpanded(subagentKey, false);
       const nestedGroupedBlocks = groupBlocks(grouped.nestedBlocks);
+      const latestAction = getLatestActionFromBlocks(grouped.nestedBlocks);
+      const summaryText =
+        latestAction
+        || description
+        || (status === 'running'
+          ? t('statusPanel.subagentThinking')
+          : t('statusPanel.subagentNoDescription'));
 
       return (
-        <div key={subagentKey} className={`subagent-thread-card status-${status}`}>
+        <div
+          key={subagentKey}
+          className={`subagent-thread-card status-${status}${isMessageStreaming ? ' streaming-block-entrance' : ''}`}
+          style={isMessageStreaming ? ({ ['--stream-order' as string]: Math.max(0, grouped.taskIndex) } as CSSProperties) : undefined}
+        >
           <button
             type="button"
-            className="subagent-thread-header"
+            className={`subagent-thread-header ${expanded ? 'expanded' : ''}`}
             onClick={() => {
               setExpandedSubagents((prev) => ({
                 ...prev,
@@ -547,7 +724,7 @@ export const MessageItem = memo(function MessageItem({
             }}
           >
             <span className="subagent-thread-title">
-              <span className="codicon codicon-hubot" />
+              <span className="subagent-thread-avatar codicon codicon-hubot" />
               <span>{subagentType}</span>
             </span>
             <span className={`subagent-thread-status status-${status}`}>
@@ -557,20 +734,28 @@ export const MessageItem = memo(function MessageItem({
                   ? t('statusPanel.subagentStatusCompleted')
                   : t('statusPanel.subagentStatusError')}
             </span>
-            <span className={`codicon ${expanded ? 'codicon-chevron-down' : 'codicon-chevron-right'}`} />
+            <span className={`subagent-thread-chevron codicon codicon-chevron-right ${expanded ? 'expanded' : ''}`} />
           </button>
 
-          {description && (
-            <div className="subagent-thread-summary" title={description}>
-              {description}
+          {summaryText && (
+            <div className="subagent-thread-summary" title={summaryText}>
+              <span className="subagent-thread-summary-label">Latest</span>
+              {summaryText}
             </div>
           )}
 
           {expanded && (
             <div className="subagent-thread-body">
               {nestedGroupedBlocks.length > 0
-                ? nestedGroupedBlocks.map((nested) =>
-                    renderStandardGroupedBlock(nested, `${subagentKey}-nested`, true))
+                ? nestedGroupedBlocks.map((nested, nestedIndex) => (
+                    <div
+                      key={`${subagentKey}-nested-wrap-${nestedIndex}`}
+                      className="subagent-body-item-enter"
+                      style={{ ['--subagent-order' as string]: nestedIndex } as CSSProperties}
+                    >
+                      {renderStandardGroupedBlock(nested, `${subagentKey}-nested`, true)}
+                    </div>
+                  ))
                 : (
                   <div className="subagent-thread-empty">{t('statusPanel.noSubagents')}</div>
                 )}
@@ -579,9 +764,43 @@ export const MessageItem = memo(function MessageItem({
         </div>
       );
     });
+
+    const primaryRendered = renderGroupList(primaryGroups);
+    const hasExecutionDetails = shouldCompactCompletedAssistant && executionDetailGroups.length > 0;
+    const hasSubagents = shouldCompactCompletedAssistant && subagentGroups.length > 0;
+
+    if (!hasExecutionDetails && !hasSubagents) {
+      return primaryRendered;
+    }
+
+    return (
+      <>
+        {hasSubagents && renderGroupList(subagentGroups)}
+        {hasExecutionDetails && (
+          <div className="message-execution-details">
+            <button
+              type="button"
+              className="message-execution-details-toggle"
+              onClick={() => setShowExecutionDetails((prev) => !prev)}
+            >
+              <span className={`codicon ${showExecutionDetails ? 'codicon-chevron-down' : 'codicon-chevron-right'}`} />
+              <span>
+                {showExecutionDetails
+                  ? t('chat.hideExecutionDetails', 'Hide execution details')
+                  : t('chat.showExecutionDetails', 'Show execution details')}
+              </span>
+            </button>
+            <div className={`message-execution-details-content ${showExecutionDetails ? 'expanded' : 'collapsed'}`}>
+              {renderGroupList(executionDetailGroups)}
+            </div>
+          </div>
+        )}
+        {primaryRendered}
+      </>
+    );
   };
 
-  if (isEmptyStreamingPlaceholder && !showStreamingConnectHint) {
+  if (isEmptyStreamingPlaceholder) {
     return <></>;
   }
 

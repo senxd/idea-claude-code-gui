@@ -32,6 +32,82 @@
     text-decoration-color: var(--color-link);
 }
 
+/* Read group accordion open/close animation */
+.read-group-shell {
+    overflow: hidden;
+    opacity: 1;
+    transition: max-height 0.28s ease, opacity 0.2s ease;
+}
+
+.read-group-shell.expanded {
+    opacity: 1;
+}
+
+.read-group-shell.collapsed {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.read-group-item-enter {
+    opacity: 0;
+    animation: read-group-item-swipe-in 0.34s ease-out forwards;
+    animation-delay: calc(var(--read-item-order, 0) * 360ms);
+    will-change: transform, opacity, filter, clip-path;
+}
+
+/* Edit group accordion + staged swipe items */
+.edit-group-shell {
+    overflow: hidden;
+    opacity: 1;
+    transition: max-height 0.28s ease, opacity 0.2s ease;
+}
+
+.edit-group-shell.expanded {
+    opacity: 1;
+}
+
+.edit-group-shell.collapsed {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.edit-group-item-enter {
+    opacity: 0;
+    animation: edit-group-item-swipe-in 0.34s ease-out forwards;
+    animation-delay: calc(var(--edit-item-order, 0) * 360ms);
+    will-change: transform, opacity, filter, clip-path;
+}
+
+@keyframes read-group-item-swipe-in {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+        clip-path: inset(0 100% 0 0);
+        filter: blur(6px) brightness(70%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        clip-path: inset(0 0 0 0);
+        filter: blur(0) brightness(100%);
+    }
+}
+
+@keyframes edit-group-item-swipe-in {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+        clip-path: inset(0 100% 0 0);
+        filter: blur(6px) brightness(70%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        clip-path: inset(0 0 0 0);
+        filter: blur(0) brightness(100%);
+    }
+}
+
 /* Bash命令块样式 */
 .bash-tool-header {
     border-bottom: none;
@@ -102,6 +178,29 @@
 
 .tool-status-indicator.error {
     background-color: var(--color-error);
+}
+
+/* Right-side controls/indicators entrance synced with row order */
+.tool-right-entrance {
+    opacity: 0;
+    animation: tool-right-swipe-in 0.34s ease-out forwards;
+    animation-delay: calc(var(--tool-right-order, 0) * 360ms + 180ms);
+    will-change: transform, opacity, filter, clip-path;
+}
+
+@keyframes tool-right-swipe-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+        clip-path: inset(0 0 0 100%);
+        filter: blur(5px) brightness(70%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        clip-path: inset(0 0 0 0);
+        filter: blur(0) brightness(100%);
+    }
 }
 
 @keyframes breathing {
@@ -249,8 +348,35 @@
     color: var(--color-success);
 }
 
+.bash-group-progress.summary-transition {
+    animation: bash-group-summary-in 0.42s ease-out both;
+}
+
 .bash-group-progress.error {
     color: var(--color-error);
+}
+
+@keyframes bash-group-summary-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+        filter: blur(4px) brightness(80%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        filter: blur(0) brightness(100%);
+    }
+}
+
+.bash-group-timeline-shell {
+    overflow: hidden;
+    transition: max-height 0.32s ease, opacity 0.2s ease;
+    opacity: 1;
+}
+
+.bash-group-timeline-shell.collapsed {
+    opacity: 0;
 }
 
 /* 时间线列表容器 */
@@ -284,54 +410,26 @@
     min-height: 32px;
 }
 
-/* 时间线连接器 */
-.bash-timeline-connector {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 20px;
-    flex-shrink: 0;
-    position: relative;
+.bash-timeline-item-enter {
+    opacity: 0;
+    animation: bash-item-enter 0.34s ease-out forwards;
+    animation-delay: calc(var(--bash-item-order, 0) * 360ms);
+    will-change: transform, opacity, filter, clip-path;
 }
 
-/* 时间线垂直线 */
-.bash-timeline-line {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background-color: var(--border-primary);
-    transform: translateX(-50%);
-}
-
-.bash-timeline-line.last {
-    height: 10px;
-}
-
-/* 时间线节点 */
-.bash-timeline-node {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background-color: var(--text-tertiary);
-    flex-shrink: 0;
-    position: relative;
-    z-index: 1;
-    margin-top: 12px;
-}
-
-.bash-timeline-node.pending {
-    background-color: var(--color-warning);
-    animation: breathing 1.5s ease-in-out infinite;
-}
-
-.bash-timeline-node.completed {
-    background-color: var(--color-success);
-}
-
-.bash-timeline-node.error {
-    background-color: var(--color-error);
+@keyframes bash-item-enter {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+        clip-path: inset(0 100% 0 0);
+        filter: blur(6px) brightness(70%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        clip-path: inset(0 0 0 0);
+        filter: blur(0) brightness(100%);
+    }
 }
 
 /* 时间线内容 */
@@ -339,7 +437,7 @@
     flex: 1;
     min-width: 0;
     padding: 4px 8px;
-    margin-left: 4px;
+    margin-left: 0;
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.15s ease;
@@ -358,6 +456,11 @@
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.bash-timeline-status {
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .bash-timeline-description {

@@ -8,7 +8,7 @@ import com.github.claudecodegui.bridge.NodeDetector;
 import com.github.claudecodegui.model.NodeDetectionResult;
 import com.github.claudecodegui.util.FontConfigService;
 import com.github.claudecodegui.util.ThemeConfigService;
-import com.github.claudecodegui.util.UsageWindowCalculator;
+import com.github.claudecodegui.util.SdkWindowUsageExtractor;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
@@ -51,6 +51,7 @@ public class SettingsHandler extends BaseMessageHandler {
         "get_node_path",
         "set_node_path",
         "get_usage_statistics",
+        "get_window_usage",
         "get_working_directory",
         "set_working_directory",
         "get_editor_font_config",
@@ -60,6 +61,8 @@ public class SettingsHandler extends BaseMessageHandler {
         "set_send_shortcut",
         "get_auto_open_file_enabled",
         "set_auto_open_file_enabled",
+        "get_animated_cursor_enabled",
+        "set_animated_cursor_enabled",
         "get_ide_theme",
         "get_commit_prompt",
         "set_commit_prompt",
@@ -143,6 +146,9 @@ public class SettingsHandler extends BaseMessageHandler {
             case "get_usage_statistics":
                 handleGetUsageStatistics(content);
                 return true;
+            case "get_window_usage":
+                handleGetWindowUsage();
+                return true;
             case "get_working_directory":
                 handleGetWorkingDirectory();
                 return true;
@@ -169,6 +175,12 @@ public class SettingsHandler extends BaseMessageHandler {
                 return true;
             case "set_auto_open_file_enabled":
                 handleSetAutoOpenFileEnabled(content);
+                return true;
+            case "get_animated_cursor_enabled":
+                handleGetAnimatedCursorEnabled();
+                return true;
+            case "set_animated_cursor_enabled":
+                handleSetAnimatedCursorEnabled(content);
                 return true;
             case "get_ide_theme":
                 handleGetIdeTheme();
@@ -348,7 +360,7 @@ public class SettingsHandler extends BaseMessageHandler {
             ClaudeSession session = context.getSession();
             if (session == null) {
                 // 即使没有会话，也要发送更新让前端知道新的 maxTokens
-                sendUsageUpdate(0, newMaxTokens);
+                sendUsageUpdate(0, newMaxTokens, null);
                 return;
             }
 
@@ -379,6 +391,8 @@ public class SettingsHandler extends BaseMessageHandler {
                 }
             }
 
+            JsonObject sdkWindowUsage = SdkWindowUsageExtractor.extractFromMessages(messages);
+
             // 计算使用的 tokens
             int inputTokens = lastUsage != null && lastUsage.has("input_tokens") ? lastUsage.get("input_tokens").getAsInt() : 0;
             int cacheWriteTokens = lastUsage != null && lastUsage.has("cache_creation_input_tokens") ? lastUsage.get("cache_creation_input_tokens").getAsInt() : 0;
@@ -398,7 +412,7 @@ public class SettingsHandler extends BaseMessageHandler {
             }
 
             // 发送更新
-            sendUsageUpdate(usedTokens, newMaxTokens);
+            sendUsageUpdate(usedTokens, newMaxTokens, sdkWindowUsage);
 
         } catch (Exception e) {
             LOG.error("[SettingsHandler] Failed to push usage update after model change: " + e.getMessage(), e);
@@ -408,7 +422,7 @@ public class SettingsHandler extends BaseMessageHandler {
     /**
      * 发送 usage 更新到前端
      */
-    private void sendUsageUpdate(int usedTokens, int maxTokens) {
+    private void sendUsageUpdate(int usedTokens, int maxTokens, JsonObject sdkWindowUsage) {
         int percentage = Math.min(100, maxTokens > 0 ? (int) ((usedTokens * 100.0) / maxTokens) : 0);
 
         LOG.info("[SettingsHandler] Sending usage update: usedTokens=" + usedTokens + ", maxTokens=" + maxTokens + ", percentage=" + percentage + "%");
@@ -420,8 +434,7 @@ public class SettingsHandler extends BaseMessageHandler {
         usageUpdate.addProperty("limit", maxTokens);
         usageUpdate.addProperty("usedTokens", usedTokens);
         usageUpdate.addProperty("maxTokens", maxTokens);
-        usageUpdate.add("windowUsage",
-                UsageWindowCalculator.calculate(context.getCurrentProvider(), context.getProject().getBasePath()));
+        usageUpdate.add("windowUsage", sdkWindowUsage != null ? sdkWindowUsage : new JsonObject());
 
         String usageJson = new Gson().toJson(usageUpdate);
 
@@ -436,6 +449,62 @@ public class SettingsHandler extends BaseMessageHandler {
                 context.getBrowser().getCefBrowser().executeJavaScript(js, context.getBrowser().getCefBrowser().getURL(), 0);
             } else {
                 LOG.warn("[SettingsHandler] Cannot send usage update: browser is null or disposed");
+            }
+        });
+    }
+
+    /**
+     * Fetch window usage (5h / Week) from the Anthropic or Codex API via the bridge
+     * and push the result to the frontend.
+     */
+    private void handleGetWindowUsage() {
+        CompletableFuture.runAsync(() -> {
+            try {
+                String provider = context.getCurrentProvider();
+                JsonObject windowUsage;
+                if ("codex".equals(provider)) {
+                    windowUsage = context.getCodexSDKBridge().fetchWindowUsage();
+                } else {
+                    windowUsage = context.getClaudeSDKBridge().fetchWindowUsage();
+                }
+
+                // Merge with current session token usage if available
+                int usedTokens = 0;
+                int maxTokens = SettingsHandler.getModelContextLimit(context.getCurrentModel());
+
+                ClaudeSession session = context.getSession();
+                if (session != null) {
+                    List<ClaudeSession.Message> messages = session.getMessages();
+                    if (messages != null) {
+                        for (int i = messages.size() - 1; i >= 0; i--) {
+                            ClaudeSession.Message msg = messages.get(i);
+                            if (msg.type != ClaudeSession.Message.Type.ASSISTANT || msg.raw == null) continue;
+                            JsonObject usage = null;
+                            if (msg.raw.has("message") && msg.raw.get("message").isJsonObject()) {
+                                JsonObject message = msg.raw.getAsJsonObject("message");
+                                if (message.has("usage")) usage = message.getAsJsonObject("usage");
+                            }
+                            if (usage == null && msg.raw.has("usage")) {
+                                usage = msg.raw.getAsJsonObject("usage");
+                            }
+                            if (usage != null) {
+                                int inputTokens = usage.has("input_tokens") ? usage.get("input_tokens").getAsInt() : 0;
+                                int cacheWriteTokens = usage.has("cache_creation_input_tokens") ? usage.get("cache_creation_input_tokens").getAsInt() : 0;
+                                int outputTokens = usage.has("output_tokens") ? usage.get("output_tokens").getAsInt() : 0;
+                                if ("codex".equals(provider)) {
+                                    usedTokens = inputTokens + outputTokens;
+                                } else {
+                                    usedTokens = inputTokens + cacheWriteTokens + outputTokens;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                sendUsageUpdate(usedTokens, maxTokens, windowUsage);
+            } catch (Exception e) {
+                LOG.warn("[SettingsHandler] handleGetWindowUsage failed: " + e.getMessage());
             }
         });
     }
@@ -1015,6 +1084,81 @@ public class SettingsHandler extends BaseMessageHandler {
             LOG.error("[SettingsHandler] Failed to set auto open file enabled: " + e.getMessage(), e);
             ApplicationManager.getApplication().invokeLater(() -> {
                 callJavaScript("window.showError", escapeJs("保存自动打开文件配置失败: " + e.getMessage()));
+            });
+        }
+    }
+
+    /**
+     * 获取输入框动画光标配置
+     */
+    private void handleGetAnimatedCursorEnabled() {
+        try {
+            String projectPath = context.getProject().getBasePath();
+            if (projectPath == null) {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    JsonObject response = new JsonObject();
+                    response.addProperty("animatedCursorEnabled", true);
+                    callJavaScript("window.updateAnimatedCursorEnabled", escapeJs(new Gson().toJson(response)));
+                });
+                return;
+            }
+
+            com.github.claudecodegui.CodemossSettingsService settingsService =
+                new com.github.claudecodegui.CodemossSettingsService();
+            boolean animatedCursorEnabled = settingsService.getAnimatedCursorEnabled(projectPath);
+
+            ApplicationManager.getApplication().invokeLater(() -> {
+                JsonObject response = new JsonObject();
+                response.addProperty("animatedCursorEnabled", animatedCursorEnabled);
+                callJavaScript("window.updateAnimatedCursorEnabled", escapeJs(new Gson().toJson(response)));
+            });
+        } catch (Exception e) {
+            LOG.error("[SettingsHandler] Failed to get animated cursor enabled: " + e.getMessage(), e);
+            ApplicationManager.getApplication().invokeLater(() -> {
+                JsonObject response = new JsonObject();
+                response.addProperty("animatedCursorEnabled", true);
+                callJavaScript("window.updateAnimatedCursorEnabled", escapeJs(new Gson().toJson(response)));
+            });
+        }
+    }
+
+    /**
+     * 设置输入框动画光标配置
+     */
+    private void handleSetAnimatedCursorEnabled(String content) {
+        try {
+            String projectPath = context.getProject().getBasePath();
+            if (projectPath == null) {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    callJavaScript("window.showError", escapeJs("无法获取项目路径"));
+                });
+                return;
+            }
+
+            Gson gson = new Gson();
+            JsonObject json = gson.fromJson(content, JsonObject.class);
+            boolean animatedCursorEnabled = true;
+
+            if (json != null && json.has("animatedCursorEnabled") && !json.get("animatedCursorEnabled").isJsonNull()) {
+                animatedCursorEnabled = json.get("animatedCursorEnabled").getAsBoolean();
+            }
+
+            com.github.claudecodegui.CodemossSettingsService settingsService =
+                new com.github.claudecodegui.CodemossSettingsService();
+            settingsService.setAnimatedCursorEnabled(projectPath, animatedCursorEnabled);
+
+            LOG.info("[SettingsHandler] Set animated cursor enabled: " + animatedCursorEnabled);
+
+            final boolean finalAnimatedCursorEnabled = animatedCursorEnabled;
+            ApplicationManager.getApplication().invokeLater(() -> {
+                JsonObject response = new JsonObject();
+                response.addProperty("animatedCursorEnabled", finalAnimatedCursorEnabled);
+                callJavaScript("window.updateAnimatedCursorEnabled", escapeJs(gson.toJson(response)));
+            });
+        } catch (Exception e) {
+            LOG.error("[SettingsHandler] Failed to set animated cursor enabled: " + e.getMessage(), e);
+            ApplicationManager.getApplication().invokeLater(() -> {
+                callJavaScript("window.showError", escapeJs("保存输入框动画光标配置失败: " + e.getMessage()));
             });
         }
     }

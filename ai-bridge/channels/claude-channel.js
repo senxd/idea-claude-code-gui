@@ -11,6 +11,7 @@ import {
   getMcpServerTools as claudeGetMcpServerTools
 } from '../services/claude/message-service.js';
 import { getSessionMessages as claudeGetSessionMessages } from '../services/claude/session-service.js';
+import { fetchClaudeWindowUsage } from '../services/usage-window-service.js';
 
 /**
  * Execute a Claude specific command.
@@ -96,11 +97,21 @@ export async function handleClaudeCommand(command, args, stdinData) {
       break;
     }
 
+    case 'getWindowUsage': {
+      try {
+        const usage = await fetchClaudeWindowUsage();
+        console.log(JSON.stringify({ success: true, data: usage }));
+      } catch (err) {
+        console.log(JSON.stringify({ success: false, error: err?.message || String(err) }));
+      }
+      break;
+    }
+
     default:
       throw new Error(`Unknown Claude command: ${command}`);
   }
 }
 
 export function getClaudeCommandList() {
-  return ['send', 'sendWithAttachments', 'getSession', 'getSlashCommands', 'rewindFiles', 'getMcpServerStatus', 'getMcpServerTools'];
+  return ['send', 'sendWithAttachments', 'getSession', 'getSlashCommands', 'rewindFiles', 'getMcpServerStatus', 'getMcpServerTools', 'getWindowUsage'];
 }

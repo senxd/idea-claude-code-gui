@@ -47,6 +47,12 @@ interface SettingsViewProps {
   // Auto open file configuration (passed from App.tsx for state sync)
   autoOpenFileEnabled?: boolean;
   onAutoOpenFileEnabledChange?: (enabled: boolean) => void;
+  // Compact completed responses configuration (passed from App.tsx for state sync)
+  compactCompletedResponsesEnabled?: boolean;
+  onCompactCompletedResponsesEnabledChange?: (enabled: boolean) => void;
+  // Animated cursor configuration (passed from App.tsx for state sync)
+  animatedCursorEnabled?: boolean;
+  onAnimatedCursorEnabledChange?: (enabled: boolean) => void;
 }
 
 const sendToJava = (message: string) => {
@@ -69,7 +75,11 @@ const SettingsView = ({
   sendShortcut: sendShortcutProp,
   onSendShortcutChange: onSendShortcutChangeProp,
   autoOpenFileEnabled: autoOpenFileEnabledProp,
-  onAutoOpenFileEnabledChange: onAutoOpenFileEnabledChangeProp
+  onAutoOpenFileEnabledChange: onAutoOpenFileEnabledChangeProp,
+  compactCompletedResponsesEnabled: compactCompletedResponsesEnabledProp,
+  onCompactCompletedResponsesEnabledChange: onCompactCompletedResponsesEnabledChangeProp,
+  animatedCursorEnabled: animatedCursorEnabledProp,
+  onAnimatedCursorEnabledChange: onAnimatedCursorEnabledChangeProp
 }: SettingsViewProps) => {
   const { t } = useTranslation();
   const isCodexMode = currentProvider === 'codex';
@@ -244,6 +254,16 @@ const SettingsView = ({
   // 自动打开文件配置 - 优先使用 props，否则使用本地状态
   const [localAutoOpenFileEnabled, setLocalAutoOpenFileEnabled] = useState<boolean>(true);
   const autoOpenFileEnabled = autoOpenFileEnabledProp ?? localAutoOpenFileEnabled;
+  // 完成后响应压缩显示配置
+  const [localCompactCompletedResponsesEnabled, setLocalCompactCompletedResponsesEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('compactCompletedResponsesEnabled') === 'true';
+  });
+  const compactCompletedResponsesEnabled =
+    compactCompletedResponsesEnabledProp ?? localCompactCompletedResponsesEnabled;
+
+  // 输入框动画光标配置 - 优先使用 props，否则使用本地状态
+  const [localAnimatedCursorEnabled, setLocalAnimatedCursorEnabled] = useState<boolean>(true);
+  const animatedCursorEnabled = animatedCursorEnabledProp ?? localAnimatedCursorEnabled;
 
   // Commit AI 提示词配置
   const [commitPrompt, setCommitPrompt] = useState('');
@@ -431,6 +451,19 @@ const SettingsView = ({
       }
     };
 
+    // 输入框动画光标配置回调 - 仅在未从 App.tsx 传递 props 时使用本地状态
+    const previousUpdateAnimatedCursorEnabled = window.updateAnimatedCursorEnabled;
+    if (!onAnimatedCursorEnabledChangeProp) {
+      window.updateAnimatedCursorEnabled = (jsonStr: string) => {
+        try {
+          const data = JSON.parse(jsonStr);
+          setLocalAnimatedCursorEnabled(data.animatedCursorEnabled ?? true);
+        } catch (error) {
+          console.error('[SettingsView] Failed to parse animated cursor config:', error);
+        }
+      };
+    }
+
     // Agent 智能体回调 - 使用 hooks 提供的更新函数
     const previousUpdateAgents = window.updateAgents;
     window.updateAgents = (jsonStr: string) => {
@@ -500,6 +533,8 @@ const SettingsView = ({
     sendToJava('get_editor_font_config:');
     // 🔧 加载流式传输配置
     sendToJava('get_streaming_enabled:');
+    // 加载输入框动画光标配置
+    sendToJava('get_animated_cursor_enabled:');
     // 加载 Commit AI 提示词
     sendToJava('get_commit_prompt:');
 
@@ -526,6 +561,9 @@ const SettingsView = ({
       if (!onSendShortcutChangeProp) {
         window.updateSendShortcut = previousUpdateSendShortcut;
       }
+      if (!onAnimatedCursorEnabledChangeProp) {
+        window.updateAnimatedCursorEnabled = previousUpdateAnimatedCursorEnabled;
+      }
       window.updateCommitPrompt = undefined;
       window.updateAgents = previousUpdateAgents;
       window.agentOperationResult = undefined;
@@ -537,7 +575,7 @@ const SettingsView = ({
 
     // 请求 IDE 主题信息
     sendToJava('get_ide_theme:');
-  }, [t, onStreamingEnabledChangeProp, onSendShortcutChangeProp]);
+  }, [t, onStreamingEnabledChangeProp, onSendShortcutChangeProp, onAnimatedCursorEnabledChangeProp]);
 
   // 监听窗口大小变化
   useEffect(() => {
@@ -669,6 +707,27 @@ const SettingsView = ({
       setLocalAutoOpenFileEnabled(enabled);
       const payload = { autoOpenFileEnabled: enabled };
       sendToJava(`set_auto_open_file_enabled:${JSON.stringify(payload)}`);
+    }
+  };
+
+  // 完成后响应压缩显示开关变更处理
+  const handleCompactCompletedResponsesEnabledChange = (enabled: boolean) => {
+    if (onCompactCompletedResponsesEnabledChangeProp) {
+      onCompactCompletedResponsesEnabledChangeProp(enabled);
+    } else {
+      setLocalCompactCompletedResponsesEnabled(enabled);
+      localStorage.setItem('compactCompletedResponsesEnabled', enabled.toString());
+    }
+  };
+
+  // 输入框动画光标开关变更处理
+  const handleAnimatedCursorEnabledChange = (enabled: boolean) => {
+    if (onAnimatedCursorEnabledChangeProp) {
+      onAnimatedCursorEnabledChangeProp(enabled);
+    } else {
+      setLocalAnimatedCursorEnabled(enabled);
+      const payload = { animatedCursorEnabled: enabled };
+      sendToJava(`set_animated_cursor_enabled:${JSON.stringify(payload)}`);
     }
   };
 
@@ -807,6 +866,8 @@ const SettingsView = ({
               onSendShortcutChange={handleSendShortcutChange}
               autoOpenFileEnabled={autoOpenFileEnabled}
               onAutoOpenFileEnabledChange={handleAutoOpenFileEnabledChange}
+              animatedCursorEnabled={animatedCursorEnabled}
+              onAnimatedCursorEnabledChange={handleAnimatedCursorEnabledChange}
             />
           </div>
 
@@ -888,6 +949,8 @@ const SettingsView = ({
                 // Dispatch custom event for same-tab sync (localStorage 'storage' event only fires for cross-tab)
                 window.dispatchEvent(new CustomEvent('historyCompletionChanged', { detail: { enabled } }));
               }}
+              compactCompletedResponsesEnabled={compactCompletedResponsesEnabled}
+              onCompactCompletedResponsesEnabledChange={handleCompactCompletedResponsesEnabledChange}
             />
           </div>
 

@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import type { TFunction } from 'i18next';
 import type { ClaudeMessage, ClaudeContentBlock, ToolResultBlock } from '../types';
 import { MessageItem } from './MessageItem';
@@ -8,6 +8,7 @@ interface MessageListProps {
   messages: ClaudeMessage[];
   streamingActive: boolean;
   isThinking: boolean;
+  compactCompletedResponses: boolean;
   loading: boolean;
   loadingStartTime: number | null;
   t: TFunction;
@@ -22,6 +23,7 @@ export const MessageList = memo(function MessageList({
   messages,
   streamingActive,
   isThinking,
+  compactCompletedResponses,
   loading,
   loadingStartTime,
   t,
@@ -31,6 +33,18 @@ export const MessageList = memo(function MessageList({
   extractMarkdownContent,
   messagesEndRef,
 }: MessageListProps) {
+  // Detect the "connecting" phase: stream started but no content received yet.
+  // The WaitingIndicator label transitions from "Thinking" to "Connecting".
+  const isConnecting = useMemo(() => {
+    if (!streamingActive || !loading || isThinking) return false;
+    const lastMsg = messages[messages.length - 1];
+    return (
+      lastMsg?.type === 'assistant' &&
+      Boolean((lastMsg as any)?.isStreaming) &&
+      (!lastMsg?.content || !lastMsg.content.trim())
+    );
+  }, [streamingActive, loading, isThinking, messages]);
+
   return (
     <>
       {messages.map((message, messageIndex) => {
@@ -47,6 +61,8 @@ export const MessageList = memo(function MessageList({
             isLast={messageIndex === messages.length - 1}
             streamingActive={streamingActive}
             isThinking={isThinking}
+            compactCompletedResponses={compactCompletedResponses}
+            loadingStartTime={loadingStartTime ?? undefined}
             t={t}
             getMessageText={getMessageText}
             getContentBlocks={getContentBlocks}
@@ -56,8 +72,13 @@ export const MessageList = memo(function MessageList({
         );
       })}
 
-      {/* Loading indicator */}
-      {loading && <WaitingIndicator startTime={loadingStartTime ?? undefined} />}
+      {/* Loading indicator — hidden when thinking block already shows elapsed time */}
+      {loading && !isThinking && (
+        <WaitingIndicator
+          startTime={loadingStartTime ?? undefined}
+          isConnecting={isConnecting}
+        />
+      )}
       <div ref={messagesEndRef} />
     </>
   );

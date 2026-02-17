@@ -67,6 +67,7 @@ import { persistJsonlMessage, loadSessionHistory } from './session-service.js';
 import { loadAttachments, buildContentBlocks } from './attachment-service.js';
 import { buildIDEContextPrompt } from '../system-prompts.js';
 import { buildQuickFixPrompt } from '../quickfix-prompts.js';
+import { fetchClaudeWindowUsage } from '../usage-window-service.js';
 
 // Store active query results for rewind operations
 // Key: sessionId, Value: query result object
@@ -674,6 +675,7 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
       let hasStreamEvents = false;
       let lastAssistantContent = '';
       let lastThinkingContent = '';
+      const windowUsageCache = { loaded: false, data: null };
 
       // Only log retry attempts (not the first attempt)
       if (retryAttempt > 0) {
@@ -781,6 +783,9 @@ export async function sendMessage(message, resumeSessionId = null, cwd = null, p
         }
       }
       if (shouldOutputMessage) {
+        if (msg.type === 'result') {
+          await maybeAttachClaudeWindowUsage(msg, windowUsageCache);
+        }
         console.log('[MESSAGE]', JSON.stringify(msg));
       }
 
@@ -1130,6 +1135,7 @@ Possible causes:
         usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
         uuid: randomUUID()
       };
+      resultMsg.windowUsage = await fetchClaudeWindowUsage();
       console.log('[MESSAGE]', JSON.stringify(resultMsg));
       console.log('[MESSAGE_END]');
       console.log(JSON.stringify({ success: false, error: errorMsg }));
@@ -1188,6 +1194,7 @@ Possible causes:
       },
       uuid: randomUUID()
     };
+    resultMsg.windowUsage = await fetchClaudeWindowUsage();
     console.log('[MESSAGE]', JSON.stringify(resultMsg));
 
     console.log('[MESSAGE_END]');
@@ -1392,6 +1399,7 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
       let hasStreamEvents = false;
       let lastAssistantContent = '';
       let lastThinkingContent = '';
+      const windowUsageCache = { loaded: false, data: null };
 
       // Only log retry attempts (not the first attempt)
       if (retryAttempt > 0) {
@@ -1493,6 +1501,9 @@ export async function sendMessageWithAttachments(message, resumeSessionId = null
 	    	        }
 	    	      }
 	    	      if (shouldOutputMessage2) {
+	    	        if (msg.type === 'result') {
+	    	          await maybeAttachClaudeWindowUsage(msg, windowUsageCache);
+	    	        }
 	    	        console.log('[MESSAGE]', JSON.stringify(msg));
 	    	      }
 
@@ -1686,6 +1697,22 @@ ${payload.error}`;
 	    if (timeoutId) clearTimeout(timeoutId);
 	  }
 	}
+
+async function maybeAttachClaudeWindowUsage(msg, cache) {
+  if (!msg || msg.type !== 'result') return;
+  if (cache.loaded) {
+    if (cache.data) msg.windowUsage = cache.data;
+    return;
+  }
+  cache.loaded = true;
+  try {
+    cache.data = await fetchClaudeWindowUsage();
+    if (cache.data) msg.windowUsage = cache.data;
+  } catch (err) {
+    console.warn('[usage-window] maybeAttachClaudeWindowUsage error:', err?.message || err);
+    cache.data = null;
+  }
+}
 
 /**
  * 获取斜杠命令列表

@@ -22,6 +22,8 @@ interface EditToolGroupBlockProps {
     input?: ToolInput;
     result?: ToolResultBlock | null;
   }>;
+  /** Whether current assistant message is actively streaming */
+  isStreaming?: boolean;
 }
 
 /** Max visible items before scroll */
@@ -130,7 +132,8 @@ function getFileIconSvg(filePath: string): string {
   return getFileIcon(extension, name);
 }
 
-const EditToolGroupBlock = ({ items }: EditToolGroupBlockProps) => {
+const EditToolGroupBlock = ({ items, isStreaming = false }: EditToolGroupBlockProps) => {
+  void isStreaming;
   const [expanded, setExpanded] = useState(true);
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
@@ -161,6 +164,20 @@ const EditToolGroupBlock = ({ items }: EditToolGroupBlockProps) => {
     }
     prevItemCountRef.current = editItems.length;
   }, [editItems.length]);
+
+  const completedCount = editItems.filter((item) => item.isCompleted).length;
+  const allCompleted = editItems.length > 0 && completedCount === editItems.length;
+  const prevAllCompletedRef = useRef(false);
+
+  // Auto-collapse once when all edits become completed
+  // (including non-streaming responses that render in a completed state).
+  useEffect(() => {
+    const becameAllCompleted = !prevAllCompletedRef.current && allCompleted;
+    if (becameAllCompleted) {
+      setExpanded(false);
+    }
+    prevAllCompletedRef.current = allCompleted;
+  }, [allCompleted]);
 
   if (editItems.length === 0) {
     return null;
@@ -233,7 +250,12 @@ const EditToolGroupBlock = ({ items }: EditToolGroupBlockProps) => {
         </div>
       </div>
 
-      {expanded && (
+      <div
+        className={`edit-group-shell ${expanded ? 'expanded' : 'collapsed'}`}
+        style={{
+          maxHeight: expanded ? `${listHeight + 12}px` : '0px',
+        }}
+      >
         <div
           ref={listRef}
           className="task-details file-list-container"
@@ -251,8 +273,9 @@ const EditToolGroupBlock = ({ items }: EditToolGroupBlockProps) => {
           {editItems.map((item, index) => (
             <div
               key={index}
-              className="file-list-item"
+              className="file-list-item edit-group-item-enter"
               style={{
+                ['--edit-item-order' as string]: index,
                 display: 'flex',
                 alignItems: 'center',
                 padding: '4px 8px',
@@ -309,7 +332,16 @@ const EditToolGroupBlock = ({ items }: EditToolGroupBlockProps) => {
               )}
 
               {/* Action buttons */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+              <div
+                className="tool-right-entrance"
+                style={{
+                  ['--tool-right-order' as string]: index,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  flexShrink: 0,
+                }}
+              >
                 <button
                   onClick={(e) => handleShowDiff(item, e)}
                   title={t('tools.showDiffInIdea')}
@@ -328,13 +360,16 @@ const EditToolGroupBlock = ({ items }: EditToolGroupBlockProps) => {
 
               {/* Status indicator */}
               <div
-                className={`tool-status-indicator ${item.isError ? 'error' : item.isCompleted ? 'completed' : 'pending'}`}
-                style={{ marginLeft: '4px' }}
+                className={`tool-status-indicator tool-right-entrance ${item.isError ? 'error' : item.isCompleted ? 'completed' : 'pending'}`}
+                style={{
+                  ['--tool-right-order' as string]: index,
+                  marginLeft: '4px',
+                }}
               />
             </div>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 };

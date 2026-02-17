@@ -3,6 +3,7 @@ package com.github.claudecodegui.session;
 import com.github.claudecodegui.provider.common.MessageCallback;
 import com.github.claudecodegui.provider.common.SDKResult;
 import com.github.claudecodegui.ClaudeSession.Message;
+import com.github.claudecodegui.util.SdkWindowUsageExtractor;
 import com.intellij.openapi.diagnostic.Logger;
 
 /**
@@ -190,12 +191,20 @@ public class CodexMessageHandler implements MessageCallback {
         try {
             com.google.gson.Gson gson = new com.google.gson.Gson();
             com.google.gson.JsonObject msgJson = gson.fromJson(jsonContent, com.google.gson.JsonObject.class);
-            if (msgJson == null || !msgJson.has("usage") || !msgJson.get("usage").isJsonObject()) {
+            if (msgJson == null) {
                 return;
             }
 
-            com.google.gson.JsonObject usage = msgJson.getAsJsonObject("usage");
-            boolean updated = attachUsageToLastAssistant(usage);
+            boolean updated = false;
+            if (msgJson.has("usage") && msgJson.get("usage").isJsonObject()) {
+                com.google.gson.JsonObject usage = msgJson.getAsJsonObject("usage");
+                updated = attachUsageToLastAssistant(usage);
+            }
+
+            com.google.gson.JsonObject sdkWindowUsage = SdkWindowUsageExtractor.extractFromResult(msgJson);
+            if (sdkWindowUsage != null) {
+                updated = attachWindowUsageToLastAssistant(sdkWindowUsage) || updated;
+            }
             if (updated) {
                 callbackHandler.notifyMessageUpdate(state.getMessages());
                 LOG.info("Codex usage applied from result message");
@@ -265,6 +274,18 @@ public class CodexMessageHandler implements MessageCallback {
             Message msg = messages.get(i);
             if (msg.type == Message.Type.ASSISTANT && msg.raw != null) {
                 msg.raw.add("usage", usage);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean attachWindowUsageToLastAssistant(com.google.gson.JsonObject windowUsage) {
+        java.util.List<Message> messages = state.getMessagesReference();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message msg = messages.get(i);
+            if (msg.type == Message.Type.ASSISTANT && msg.raw != null) {
+                msg.raw.add("windowUsage", windowUsage);
                 return true;
             }
         }

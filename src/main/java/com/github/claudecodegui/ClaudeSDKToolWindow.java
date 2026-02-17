@@ -35,11 +35,12 @@ import com.github.claudecodegui.util.JBCefBrowserFactory;
 import com.github.claudecodegui.util.JsUtils;
 import com.github.claudecodegui.util.LanguageConfigService;
 import com.github.claudecodegui.util.PlatformUtils;
-import com.github.claudecodegui.util.UsageWindowCalculator;
+import com.github.claudecodegui.util.SdkWindowUsageExtractor;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.intellij.icons.AllIcons;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -67,6 +68,7 @@ import com.intellij.ui.jcef.JBCefBrowser;
 import com.intellij.ui.jcef.JBCefBrowserBase;
 import com.intellij.ui.jcef.JBCefJSQuery;
 import com.intellij.util.Alarm;
+import com.intellij.ui.AnimatedIcon;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import org.cef.browser.CefBrowser;
@@ -117,6 +119,13 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
      */
     public static ClaudeChatWindow getChatWindow(Project project) {
         return instances.get(project);
+    }
+
+    public static ClaudeChatWindow getChatWindowForContent(Content content) {
+        if (content == null) {
+            return null;
+        }
+        return contentToWindowMap.get(content);
     }
 
     /**
@@ -258,6 +267,15 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
             }
 
             @Override
+            public void selectionChanged(@NotNull ContentManagerEvent event) {
+                Content selectedContent = event.getContent();
+                ClaudeChatWindow window = contentToWindowMap.get(selectedContent);
+                if (window != null) {
+                    window.clearUnreadState();
+                }
+            }
+
+            @Override
             public void contentRemoveQuery(@NotNull ContentManagerEvent event) {
                 // Show confirmation dialog before closing tab
                 Content content = event.getContent();
@@ -391,6 +409,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
 
         // 设置 parent content 以支持多标签页代码片段
         firstChatWindow.setParentContent(loadingContent);
+        firstChatWindow.restorePersistedSessionIfAny(0);
 
         // 设置 disposer
         loadingContent.setDisposer(() -> {
@@ -420,6 +439,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
             chatWindow.setParentContent(content);
 
             contentManager.addContent(content);
+            chatWindow.restorePersistedSessionIfAny(i);
         }
 
         // 初始化所有标签页的可关闭状态
@@ -464,6 +484,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
             chatWindow.setOriginalTabName(tabName);
 
             contentManager.addContent(content);
+            chatWindow.restorePersistedSessionIfAny(i);
 
             // Only set disposer for the first tab (main instance)
             if (isFirstTab) {
@@ -539,6 +560,8 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
         private static final String PERMISSION_MODE_PROPERTY_KEY = "claude.code.permission.mode";
         // Tab status auto-reset delay (seconds)
         private static final int STATUS_RESET_DELAY_SECONDS = 5;
+        private static final int TAB_LOADING_ANIMATION_INTERVAL_MS = 350;
+        private static final String[] TAB_LOADING_SUFFIX_FRAMES = {"   ", ".  ", ".. ", "..."};
 
         private final JPanel mainPanel;
         private final ClaudeSDKBridge claudeSDKBridge;
@@ -559,6 +582,23 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
         private String originalTabName;
         private TabAnswerStatus currentTabStatus = TabAnswerStatus.IDLE;
         private ScheduledFuture<?> statusResetTask;
+        private ScheduledFuture<?> tabLoadingAnimationTask;
+        private volatile int tabLoadingFrameIndex = 0;
+
+        // Tab icons for active/unread states
+        private static final Icon TAB_ICON_ANSWERING = new AnimatedIcon(
+            800,
+            AllIcons.Process.Step_1,
+            AllIcons.Process.Step_2,
+            AllIcons.Process.Step_3,
+            AllIcons.Process.Step_4,
+            AllIcons.Process.Step_5,
+            AllIcons.Process.Step_6,
+            AllIcons.Process.Step_7,
+            AllIcons.Process.Step_8
+        );
+        private static final Icon TAB_ICON_UNREAD = AllIcons.Toolwindows.InfoEvents;
+        private volatile boolean hasUnreadCompletion = false;
 
         // Session ID for permission service cleanup
         private volatile String sessionId = null;
@@ -659,13 +699,75 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 // Auto-initialize originalTabName if not set (for existing tabs)
                 if (this.originalTabName == null) {
                     String displayName = content.getDisplayName();
-                    // Remove "..." suffix if present (in case tab is already in loading state)
-                    this.originalTabName = displayName.endsWith("...")
-                        ? displayName.substring(0, displayName.length() - 3)
-                        : displayName;
+                    this.originalTabName = normalizeDisplayNameToOriginal(displayName);
                     LOG.debug("[TabLoading] Auto-initialized original tab name: " + this.originalTabName);
                 }
             }
+        }
+
+        public void restorePersistedSessionIfAny(int tabIndex) {
+            try {
+                TabStateService tabStateService = TabStateService.getInstance(project);
+                String savedSessionId = tabStateService.getTabSessionId(tabIndex);
+                if (savedSessionId == null || savedSessionId.trim().isEmpty()) {
+                    return;
+                }
+
+                String workingDirectory = determineWorkingDirectory();
+                session.setSessionInfo(savedSessionId, workingDirectory);
+                LOG.info("[SessionRestore] Restoring tab " + tabIndex + " with sessionId=" + savedSessionId);
+
+                session.loadFromServer().exceptionally(ex -> {
+                    LOG.warn("[SessionRestore] Failed to restore tab " + tabIndex + " session: " + ex.getMessage());
+                    return null;
+                });
+            } catch (Exception e) {
+                LOG.warn("[SessionRestore] Failed to restore tab " + tabIndex + ": " + e.getMessage());
+            }
+        }
+
+        private int getCurrentTabIndex() {
+            if (parentContent == null) {
+                return -1;
+            }
+            ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CCG");
+            if (toolWindow == null) {
+                return -1;
+            }
+            return toolWindow.getContentManager().getIndexOfContent(parentContent);
+        }
+
+        private void saveSessionIdToTabState(String sessionId) {
+            if (sessionId == null || sessionId.trim().isEmpty()) {
+                return;
+            }
+            int tabIndex = getCurrentTabIndex();
+            if (tabIndex < 0) {
+                return;
+            }
+            TabStateService.getInstance(project).saveTabSessionId(tabIndex, sessionId);
+        }
+
+        private void clearSessionIdFromTabState() {
+            int tabIndex = getCurrentTabIndex();
+            if (tabIndex < 0) {
+                return;
+            }
+            TabStateService.getInstance(project).removeTabSessionId(tabIndex);
+        }
+
+        private String normalizeDisplayNameToOriginal(String displayName) {
+            if (displayName == null || displayName.isEmpty()) {
+                return "";
+            }
+            String normalized = displayName;
+            for (String suffix : TAB_LOADING_SUFFIX_FRAMES) {
+                if (!suffix.trim().isEmpty() && normalized.endsWith(suffix)) {
+                    normalized = normalized.substring(0, normalized.length() - suffix.length());
+                    break;
+                }
+            }
+            return normalized;
         }
 
         /**
@@ -674,6 +776,22 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
         public void setOriginalTabName(String name) {
             this.originalTabName = name;
             LOG.debug("[TabLoading] Set original tab name: " + name);
+        }
+
+        public void renameTab(String name) {
+            if (name == null || name.trim().isEmpty()) {
+                return;
+            }
+            setOriginalTabName(name.trim());
+            if (parentContent == null) {
+                return;
+            }
+
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (parentContent != null) {
+                    parentContent.setDisplayName(getCurrentDisplayName());
+                }
+            });
         }
 
         /**
@@ -699,18 +817,35 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 statusResetTask = null;
             }
 
+            // Stop animation when leaving answering state
+            if (status != TabAnswerStatus.ANSWERING) {
+                stopTabLoadingAnimation();
+            }
+
             ApplicationManager.getApplication().invokeLater(() -> {
-                String displayName;
                 switch (status) {
                     case ANSWERING:
-                        // Use "..." suffix for answering state (simple and language-neutral)
-                        displayName = originalTabName + "...";
-                        LOG.debug("[TabStatus] Set answering state for tab: " + displayName);
+                        hasUnreadCompletion = false;
+                        tabLoadingFrameIndex = 0;
+                        if (parentContent != null) {
+                            parentContent.setDisplayName(getCurrentDisplayName());
+                            parentContent.setIcon(TAB_ICON_ANSWERING);
+                        }
+                        startTabLoadingAnimation();
+                        LOG.debug("[TabStatus] Started answering animation for tab: " + originalTabName);
                         break;
                     case COMPLETED:
-                        String completedText = com.github.claudecodegui.ClaudeCodeGuiBundle.message("tab.status.completed");
-                        displayName = originalTabName + " (" + completedText + ")";
-                        LOG.debug("[TabStatus] Set completed state for tab: " + displayName);
+                        if (parentContent != null) {
+                            parentContent.setDisplayName(getCurrentDisplayName());
+                            if (!isTabCurrentlySelected()) {
+                                hasUnreadCompletion = true;
+                                parentContent.setIcon(TAB_ICON_UNREAD);
+                                LOG.debug("[TabStatus] Set unread icon for non-selected tab: " + originalTabName);
+                            } else {
+                                parentContent.setIcon(null);
+                            }
+                        }
+                        LOG.debug("[TabStatus] Set completed state for tab: " + originalTabName);
 
                         // Schedule auto-reset to IDLE after configured delay
                         // FIX: Wrap callback in invokeLater to ensure EDT execution
@@ -722,11 +857,93 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                         break;
                     case IDLE:
                     default:
-                        displayName = originalTabName;
-                        LOG.debug("[TabStatus] Restored idle state for tab: " + displayName);
+                        if (parentContent != null) {
+                            parentContent.setDisplayName(getCurrentDisplayName());
+                            if (!hasUnreadCompletion) {
+                                parentContent.setIcon(null);
+                            }
+                        }
+                        LOG.debug("[TabStatus] Restored idle state for tab: " + originalTabName);
                         break;
                 }
-                parentContent.setDisplayName(displayName);
+            });
+        }
+
+        private String getCurrentDisplayName() {
+            if (originalTabName == null) {
+                return "";
+            }
+            switch (currentTabStatus) {
+                case ANSWERING:
+                    return originalTabName + TAB_LOADING_SUFFIX_FRAMES[tabLoadingFrameIndex];
+                case COMPLETED:
+                    String completedText = com.github.claudecodegui.ClaudeCodeGuiBundle.message("tab.status.completed");
+                    return originalTabName + " (" + completedText + ")";
+                case IDLE:
+                default:
+                    return originalTabName;
+            }
+        }
+
+        private void startTabLoadingAnimation() {
+            stopTabLoadingAnimation();
+            tabLoadingAnimationTask = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(() -> {
+                if (disposed || currentTabStatus != TabAnswerStatus.ANSWERING || parentContent == null || originalTabName == null) {
+                    return;
+                }
+                tabLoadingFrameIndex = (tabLoadingFrameIndex + 1) % TAB_LOADING_SUFFIX_FRAMES.length;
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (!disposed && currentTabStatus == TabAnswerStatus.ANSWERING && parentContent != null) {
+                        parentContent.setDisplayName(getCurrentDisplayName());
+                    }
+                });
+            }, TAB_LOADING_ANIMATION_INTERVAL_MS, TAB_LOADING_ANIMATION_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        }
+
+        private void stopTabLoadingAnimation() {
+            if (tabLoadingAnimationTask != null && !tabLoadingAnimationTask.isDone()) {
+                tabLoadingAnimationTask.cancel(false);
+            }
+            tabLoadingAnimationTask = null;
+            tabLoadingFrameIndex = 0;
+        }
+
+        /**
+         * Check if this tab is currently selected in the tool window.
+         * Must be called on EDT.
+         */
+        private boolean isTabCurrentlySelected() {
+            if (parentContent == null || project == null || project.isDisposed()) {
+                return false;
+            }
+            try {
+                ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CCG");
+                if (toolWindow == null) {
+                    return false;
+                }
+                ContentManager contentManager = toolWindow.getContentManager();
+                Content selectedContent = contentManager.getSelectedContent();
+                return parentContent.equals(selectedContent);
+            } catch (Exception e) {
+                LOG.debug("[TabStatus] Failed to check tab selection: " + e.getMessage());
+                return false;
+            }
+        }
+
+        /**
+         * Clear the unread completion indicator for this tab.
+         * Called when the tab becomes selected.
+         */
+        public void clearUnreadState() {
+            if (!hasUnreadCompletion) {
+                return;
+            }
+            hasUnreadCompletion = false;
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (parentContent != null && currentTabStatus != TabAnswerStatus.ANSWERING) {
+                    parentContent.setIcon(null);
+                    LOG.debug("[TabStatus] Cleared unread icon for tab: " + originalTabName);
+                }
             });
         }
 
@@ -1965,6 +2182,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
             String workingDir = (projectPath != null && new File(projectPath).exists())
                 ? projectPath : determineWorkingDirectory();
             session.setSessionInfo(sessionId, workingDir);
+            saveSessionIdToTabState(sessionId);
 
             session.loadFromServer().thenRun(() -> ApplicationManager.getApplication().invokeLater(() -> {
                 // 通知前端历史消息加载完成，触发 Markdown 重新渲染
@@ -2025,6 +2243,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 @Override
                 public void onSessionIdReceived(String sessionId) {
                     LOG.info("Session ID: " + sessionId);
+                    saveSessionIdToTabState(sessionId);
                     // Send sessionId to frontend for rewind feature
                     ApplicationManager.getApplication().invokeLater(() -> {
                         callJavaScript("setSessionId", JsUtils.escapeJs(sessionId));
@@ -2536,8 +2755,8 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 usageUpdate.addProperty("limit", maxTokens);
                 usageUpdate.addProperty("usedTokens", usedTokens);
                 usageUpdate.addProperty("maxTokens", maxTokens);
-                usageUpdate.add("windowUsage",
-                        UsageWindowCalculator.calculate(currentProvider, project.getBasePath()));
+                JsonObject sdkWindowUsage = SdkWindowUsageExtractor.extractFromMessages(messages);
+                usageUpdate.add("windowUsage", sdkWindowUsage != null ? sdkWindowUsage : new JsonObject());
 
                 String usageJson = new Gson().toJson(usageUpdate);
                 ApplicationManager.getApplication().invokeLater(() -> {
@@ -2611,6 +2830,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 // 设置工作目录（sessionId 为 null 表示新会话）
                 String workingDirectory = determineWorkingDirectory();
                 session.setSessionInfo(null, workingDirectory);
+                clearSessionIdFromTabState();
 
                 LOG.info("New session created successfully, working directory: " + workingDirectory);
 
@@ -2626,8 +2846,7 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                     usageUpdate.addProperty("limit", maxTokens);
                     usageUpdate.addProperty("usedTokens", 0);
                     usageUpdate.addProperty("maxTokens", maxTokens);
-                    usageUpdate.add("windowUsage",
-                            UsageWindowCalculator.calculate(handlerContext.getCurrentProvider(), project.getBasePath()));
+                    usageUpdate.add("windowUsage", new JsonObject());
 
                     String usageJson = new Gson().toJson(usageUpdate);
 
@@ -2957,6 +3176,16 @@ public class ClaudeSDKToolWindow implements ToolWindowFactory, DumbAware {
                 statusResetTask.cancel(false);
                 statusResetTask = null;
                 LOG.debug("[TabStatus] Cancelled pending status reset task");
+            }
+            stopTabLoadingAnimation();
+
+            // Clear tab icon
+            try {
+                if (parentContent != null) {
+                    parentContent.setIcon(null);
+                }
+            } catch (Exception ignored) {
+                // Tab may already be removed
             }
 
             if (connection != null) {

@@ -225,7 +225,14 @@ const StatusPanel = ({ todos, fileChanges, subagents, expanded = true, isStreami
   };
 
   return (
-    <div className="status-panel" ref={popoverRef}>
+    <div className="status-panel" ref={popoverRef} onClick={(e) => e.stopPropagation()}>
+      {/* Popover Content - expands upward above the tabs */}
+      {openPopover && (
+        <div className="status-panel-popover">
+          {renderPopoverContent()}
+        </div>
+      )}
+
       {/* Tab Header */}
       <div className="status-panel-tabs">
         {/* Todo Tab */}
@@ -277,13 +284,6 @@ const StatusPanel = ({ todos, fileChanges, subagents, expanded = true, isStreami
           )}
         </div>
       </div>
-
-      {/* Popover Content */}
-      {openPopover && (
-        <div className="status-panel-popover">
-          {renderPopoverContent()}
-        </div>
-      )}
 
       {/* Dialogs */}
       <UndoConfirmDialog

@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'checkstyle'
-    id 'org.jetbrains.intellij.platform' version '2.10.5'
+    id 'org.jetbrains.intellij.platform' version '2.11.0'
 }
 
 // Load local properties file (not committed to git)
@@ -67,6 +67,11 @@ if (localJavaHome) {
     }
 }
 
+// Persist sandbox outside build/ so `clean` does not wipe IDE session state
+intellijPlatform {
+    sandboxContainer = layout.projectDirectory.dir(".idea-sandbox")
+}
+
 repositories {
     mavenCentral()
     intellijPlatform {
@@ -75,7 +80,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.google.code.gson:gson:2.13.2'
 
     intellijPlatform {
         def targetIde = project.findProperty('targetIde') ?: 'IC'
@@ -235,19 +240,15 @@ tasks.named('runIde') {
     errorOutput = System.err
 
     // 复制自定义配置到sandbox
+    def sandboxConfigFile = file('sandbox-idea.properties')
+    def sandboxDirFile = layout.projectDirectory.dir(".idea-sandbox").asFile
     doFirst {
-        def sandboxConfig = file('sandbox-idea.properties')
-        if (sandboxConfig.exists()) {
-            def sandboxDir = layout.buildDirectory.dir("idea-sandbox").get().asFile
-            def configDir = new File(sandboxDir, 'config')
+        if (sandboxConfigFile.exists()) {
+            def configDir = new File(sandboxDirFile, 'config')
             configDir.mkdirs()
-
-            copy {
-                from sandboxConfig
-                into configDir
-                rename { 'idea.properties' }
-            }
-            println "已复制sandbox配置到: ${configDir}/idea.properties"
+            def target = new File(configDir, 'idea.properties')
+            target.bytes = sandboxConfigFile.bytes
+            println "已复制sandbox配置到: ${target}"
         }
     }
 }
@@ -269,6 +270,20 @@ def localNodePath = getLocalProperty('node.path')
 tasks.register('buildWebview', Exec) {
     workingDir webviewDir
     environment 'VITE_ENABLE_VCONSOLE', enableVConsoleInWebview ? 'true' : 'false'
+    // Make webview build incremental: skip when inputs/outputs are unchanged.
+    inputs.files(fileTree(webviewDir) {
+        include 'src/**'
+        include 'scripts/**'
+        include 'index.html'
+        include 'package.json'
+        include 'package-lock.json'
+        include 'tsconfig*.json'
+        include 'vite.config.*'
+    })
+    outputs.files(
+        new File(webviewDir, 'dist/index.html'),
+        file('src/main/resources/html/claude-chat.html')
+    )
 
     // Determine npm command path with robust detection
     def npmCommand = 'npm'
@@ -338,6 +353,7 @@ tasks.named('processResources') {
 
 // 使用系统 zip 命令打包 ai-bridge，保留文件权限
 tasks.register('packageAiBridge', Exec) {
+    mustRunAfter(tasks.named('clean'))
     onlyIf { aiBridgeDir.exists() }
 
     // 切换到 ai-bridge 目录内部进行打包，避免包含顶层目录
@@ -394,7 +410,17 @@ tasks.register('packageAiBridge', Exec) {
                         Copy-Item $_.FullName -Destination $dest -Force
                     }
                 }
-                Compress-Archive -Path "$tempDir\\*" -DestinationPath "''' + aiBridgeArchive.absolutePath.replace('\\', '\\\\') + '''" -Force
+                $destinationZip = "''' + aiBridgeArchive.absolutePath.replace('\\', '\\\\') + '''"
+                $destinationDir = Split-Path -Parent $destinationZip
+                if (-not (Test-Path $destinationDir)) {
+                    New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+                }
+                Push-Location $tempDir
+                try {
+                    Compress-Archive -Path * -DestinationPath $destinationZip -Force
+                } finally {
+                    Pop-Location
+                }
             } finally {
                 if (Test-Path $tempDir) {
                     Remove-Item -Path $tempDir -Recurse -Force
@@ -441,7 +467,7 @@ def pluginName = project.name
 
 tasks.matching { it.name.startsWith('prepareSandbox') }.configureEach {
     dependsOn('buildWebview', 'packageAiBridge')
-    def sandboxRootProvider = layout.buildDirectory.dir('idea-sandbox')
+    def sandboxRoot = layout.projectDirectory.dir('.idea-sandbox').asFile
     // 在配置阶段捕获需要的文件引用
     def archiveSource = aiBridgeArchive
     def hashSource = aiBridgeHashFile
@@ -451,7 +477,6 @@ tasks.matching { it.name.startsWith('prepareSandbox') }.configureEach {
         if (!bridgeDir.exists() && !archiveSource.exists()) {
             throw new GradleException('ai-bridge 目录不存在，请确保已拉取并安装依赖。')
         }
-        def sandboxRoot = sandboxRootProvider.get().asFile
         def pluginDir = new File(sandboxRoot, "plugins/${pluginName}")
 
         def extractedDir = new File(pluginDir, 'ai-bridge')
@@ -477,45 +502,51 @@ tasks.matching { it.name == 'preparePluginForDistribution' || it.name == 'compos
 tasks.named('buildPlugin') {
     dependsOn('packageAiBridge', 'checkstyleMain')
 
+    // Capture variables outside doLast to avoid referencing Gradle script objects
+    def bridgeArchive = aiBridgeArchive
+    def bridgeHashFile = aiBridgeHashFile
+    def pName = pluginName
+    def buildDirFile = layout.buildDirectory.get().asFile
+
     doLast {
         // 解压插件 zip，添加 ai-bridge.zip 和 ai-bridge.hash，然后重新打包
         def distributionFile = archiveFile.get().asFile
-        if (distributionFile.exists() && aiBridgeArchive.exists()) {
-            def tempDir = file("${layout.buildDirectory.get()}/tmp/plugin-repack")
-            delete(tempDir)
+        if (distributionFile.exists() && bridgeArchive.exists()) {
+            def tempDir = new File(buildDirFile, 'tmp/plugin-repack')
+
+            ant.delete(dir: tempDir, failonerror: false)
 
             // 解压
-            copy {
-                from zipTree(distributionFile)
-                into tempDir
-            }
+            ant.unzip(src: distributionFile, dest: tempDir)
 
             // 找到插件目录并添加 ai-bridge.zip 和 ai-bridge.hash
-            def pluginDir = new File(tempDir, pluginName)
+            def pluginDir = new File(tempDir, pName)
             if (pluginDir.exists()) {
-                copy {
-                    from aiBridgeArchive
-                    from aiBridgeHashFile
-                    into pluginDir
+                ant.copy(file: bridgeArchive, todir: pluginDir)
+                if (bridgeHashFile.exists()) {
+                    ant.copy(file: bridgeHashFile, todir: pluginDir)
                 }
 
                 // 删除 searchableOptions jar（如果存在）
-                fileTree(new File(pluginDir, 'lib')).matching {
-                    include '**/*searchableOptions*.jar'
-                }.each { jarFile ->
-                    delete(jarFile)
-                    println "已删除 searchableOptions jar: ${jarFile.name}"
+                def libDir = new File(pluginDir, 'lib')
+                if (libDir.exists()) {
+                    libDir.listFiles()?.findAll {
+                        it.name.contains('searchableOptions') && it.name.endsWith('.jar')
+                    }?.each { jarFile ->
+                        jarFile.delete()
+                        println "已删除 searchableOptions jar: ${jarFile.name}"
+                    }
                 }
 
                 // 重新打包
-                delete(distributionFile)
+                distributionFile.delete()
                 ant.zip(destfile: distributionFile) {
                     fileset(dir: tempDir)
                 }
                 println "已将 ai-bridge.zip 和 ai-bridge.hash 添加到插件包并移除 searchableOptions jar"
             }
 
-            delete(tempDir)
+            ant.delete(dir: tempDir, failonerror: false)
         }
     }
 }

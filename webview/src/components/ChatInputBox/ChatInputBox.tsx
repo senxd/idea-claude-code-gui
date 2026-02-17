@@ -18,6 +18,7 @@ import type {
 import { ChatInputBoxHeader } from './ChatInputBoxHeader.js';
 import { ChatInputBoxFooter } from './ChatInputBoxFooter.js';
 import { ResizeHandles } from './ResizeHandles.js';
+import { StatusPanel, StatusPanelErrorBoundary } from '../StatusPanel';
 import {
   useCompletionDropdown,
   useCompletionTriggerDetection,
@@ -77,6 +78,9 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
       usageMaxTokens,
       usageLast5hTokens,
       usageWeekTokens,
+      usageLast5hPercent,
+      usageWeekPercent,
+      usageLast5hResetsAt,
       showUsage = true,
       attachments: externalAttachments,
       placeholder = '', // Will be passed from parent via t('chat.inputPlaceholder')
@@ -100,13 +104,20 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
       streamingEnabled,
       onStreamingEnabledChange,
       sendShortcut = 'enter',
+      animatedCursorEnabled = true,
       selectedAgent,
       onAgentSelect,
       onOpenAgentSettings,
       hasMessages = false,
       onRewind,
       statusPanelExpanded = true,
-      onToggleStatusPanel,
+      statusPanelTodos = [],
+      statusPanelFileChanges = [],
+      statusPanelSubagents = [],
+      statusPanelIsStreaming = false,
+      onStatusPanelUndoFile,
+      onStatusPanelDiscardAll,
+      onStatusPanelKeepAll,
       sdkInstalled = true, // Default to true to avoid disabling input box on initial state
       sdkStatusLoading = false, // SDK status loading state
       onInstallSdk,
@@ -129,6 +140,8 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
     const submittedOnEnterRef = useRef(false);
     const completionSelectedRef = useRef(false);
     const [hasContent, setHasContent] = useState(false);
+    const animatedCursorRef = useRef<HTMLDivElement | null>(null);
+    const animatedCursorBlinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Flag to track if we're updating from external value
     const isExternalUpdateRef = useRef(false);
@@ -663,6 +676,149 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
       editableWrapperRef,
     });
 
+    const getCaretRectWithinWrapper = useCallback(() => {
+      const editableEl = editableRef.current;
+      const wrapperEl = editableWrapperRef.current;
+      const selection = window.getSelection();
+      if (!editableEl || !wrapperEl || !selection || selection.rangeCount === 0) {
+        return null;
+      }
+
+      const range = selection.getRangeAt(0);
+      if (!selection.isCollapsed || !editableEl.contains(range.startContainer)) {
+        return null;
+      }
+
+      const collapsedRange = range.cloneRange();
+      collapsedRange.collapse(true);
+
+      let rect = collapsedRange.getClientRects()[0] ?? collapsedRange.getBoundingClientRect();
+      if (rect.height === 0) {
+        const editableRect = editableEl.getBoundingClientRect();
+        // Use computed line-height for cursor height, not the full editable area height
+        const computedStyle = window.getComputedStyle(editableEl);
+        const fontSize = parseFloat(computedStyle.fontSize) || 14;
+        const lineHeight = parseFloat(computedStyle.lineHeight) || fontSize * 1.5;
+        rect = new DOMRect(editableRect.left, editableRect.top, 0, lineHeight);
+      }
+
+      const wrapperRect = wrapperEl.getBoundingClientRect();
+      return {
+        left: rect.left - wrapperRect.left + wrapperEl.scrollLeft,
+        top: rect.top - wrapperRect.top + wrapperEl.scrollTop,
+        height: Math.max(1, rect.height),
+      };
+    }, []);
+
+    useEffect(() => {
+      const editableEl = editableRef.current;
+      const wrapperEl = editableWrapperRef.current;
+      if (!editableEl || !wrapperEl) return;
+
+      if (!animatedCursorEnabled) {
+        if (animatedCursorRef.current) {
+          animatedCursorRef.current.remove();
+          animatedCursorRef.current = null;
+        }
+        if (animatedCursorBlinkTimeoutRef.current) {
+          clearTimeout(animatedCursorBlinkTimeoutRef.current);
+          animatedCursorBlinkTimeoutRef.current = null;
+        }
+        return;
+      }
+
+      let caretEl = animatedCursorRef.current;
+      if (!caretEl) {
+        caretEl = document.createElement('div');
+        caretEl.className = 'input-animated-cursor';
+        wrapperEl.appendChild(caretEl);
+        animatedCursorRef.current = caretEl;
+      }
+
+      const hideCursor = () => {
+        if (!animatedCursorRef.current) return;
+        animatedCursorRef.current.classList.remove('is-visible', 'is-moving');
+      };
+
+      const updateCursor = () => {
+        if (!editableRef.current || !animatedCursorRef.current) return;
+        if (document.activeElement !== editableRef.current) {
+          hideCursor();
+          return;
+        }
+
+        const rect = getCaretRectWithinWrapper();
+        if (!rect) {
+          hideCursor();
+          return;
+        }
+
+        const cursor = animatedCursorRef.current;
+        cursor.style.left = `${rect.left}px`;
+        cursor.style.top = `${rect.top}px`;
+        cursor.style.height = `${rect.height}px`;
+        cursor.classList.add('is-visible', 'is-moving');
+
+        if (animatedCursorBlinkTimeoutRef.current) {
+          clearTimeout(animatedCursorBlinkTimeoutRef.current);
+        }
+        animatedCursorBlinkTimeoutRef.current = setTimeout(() => {
+          cursor.classList.remove('is-moving');
+        }, 350);
+      };
+
+      const rafUpdateCursor = () => requestAnimationFrame(updateCursor);
+      const handleSelectionChange = () => {
+        if (!editableRef.current) return;
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+          hideCursor();
+          return;
+        }
+        const range = selection.getRangeAt(0);
+        if (!editableRef.current.contains(range.startContainer)) {
+          hideCursor();
+          return;
+        }
+        rafUpdateCursor();
+      };
+
+      const handleBlur = () => hideCursor();
+      const handleFocus = () => rafUpdateCursor();
+
+      document.addEventListener('selectionchange', handleSelectionChange);
+      editableEl.addEventListener('keyup', rafUpdateCursor);
+      editableEl.addEventListener('click', rafUpdateCursor);
+      editableEl.addEventListener('input', rafUpdateCursor);
+      editableEl.addEventListener('focus', handleFocus);
+      editableEl.addEventListener('blur', handleBlur);
+      wrapperEl.addEventListener('scroll', rafUpdateCursor);
+      window.addEventListener('resize', rafUpdateCursor);
+      window.addEventListener('scroll', rafUpdateCursor, true);
+
+      rafUpdateCursor();
+
+      return () => {
+        document.removeEventListener('selectionchange', handleSelectionChange);
+        editableEl.removeEventListener('keyup', rafUpdateCursor);
+        editableEl.removeEventListener('click', rafUpdateCursor);
+        editableEl.removeEventListener('input', rafUpdateCursor);
+        editableEl.removeEventListener('focus', handleFocus);
+        editableEl.removeEventListener('blur', handleBlur);
+        wrapperEl.removeEventListener('scroll', rafUpdateCursor);
+        window.removeEventListener('resize', rafUpdateCursor);
+        window.removeEventListener('scroll', rafUpdateCursor, true);
+        if (animatedCursorBlinkTimeoutRef.current) {
+          clearTimeout(animatedCursorBlinkTimeoutRef.current);
+          animatedCursorBlinkTimeoutRef.current = null;
+        }
+        if (animatedCursorRef.current) {
+          animatedCursorRef.current.remove();
+          animatedCursorRef.current = null;
+        }
+      };
+    }, [animatedCursorEnabled, getCaretRectWithinWrapper]);
+
     return (
       <div
         className={`chat-input-box ${isResizingInputBox ? 'is-resizing' : ''}`}
@@ -671,6 +827,19 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
         style={containerStyle}
       >
         <ResizeHandles getHandleProps={getHandleProps} nudge={nudge} />
+
+        <StatusPanelErrorBoundary>
+          <StatusPanel
+            todos={statusPanelTodos}
+            fileChanges={statusPanelFileChanges}
+            subagents={statusPanelSubagents}
+            expanded={statusPanelExpanded}
+            isStreaming={statusPanelIsStreaming}
+            onUndoFile={onStatusPanelUndoFile}
+            onDiscardAll={onStatusPanelDiscardAll}
+            onKeepAll={onStatusPanelKeepAll}
+          />
+        </StatusPanelErrorBoundary>
 
         <ChatInputBoxHeader
           sdkStatusLoading={sdkStatusLoading}
@@ -687,6 +856,9 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
         usageMaxTokens={usageMaxTokens}
         usageLast5hTokens={usageLast5hTokens}
         usageWeekTokens={usageWeekTokens}
+        usageLast5hPercent={usageLast5hPercent}
+        usageWeekPercent={usageWeekPercent}
+        usageLast5hResetsAt={usageLast5hResetsAt}
         showUsage={showUsage}
           onClearContext={onClearContext}
           onAddAttachment={handleAddAttachment}
@@ -694,8 +866,6 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
           onClearAgent={() => onAgentSelect?.(null)}
           hasMessages={hasMessages}
           onRewind={onRewind}
-          statusPanelExpanded={statusPanelExpanded}
-          onToggleStatusPanel={onToggleStatusPanel}
           messageQueue={messageQueue}
           onRemoveFromQueue={onRemoveFromQueue}
         />
@@ -710,7 +880,7 @@ export const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(
         >
           <div
             ref={editableRef}
-            className="input-editable"
+            className={`input-editable ${animatedCursorEnabled ? 'input-editable-animated-caret' : ''}`}
             contentEditable={!disabled}
             data-placeholder={placeholder}
             data-completion-suffix={inlineCompletion.suffix || ''}

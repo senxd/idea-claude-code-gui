@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TextShimmer } from '@/components/core/text-shimmer';
 import type { SubagentInfo } from '../../types';
 import { subagentStatusIconMap } from './types';
 
@@ -10,6 +11,7 @@ interface SubagentListProps {
 const SubagentList = memo(({ subagents }: SubagentListProps) => {
   const { t } = useTranslation();
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const sortedSubagents = useMemo(
     () => [...subagents].sort((a, b) => a.messageIndex - b.messageIndex),
@@ -25,11 +27,36 @@ const SubagentList = memo(({ subagents }: SubagentListProps) => {
           next[key] = prev[key];
           return;
         }
-        next[key] = subagent.status === 'running';
+        next[key] = false;
       });
       return next;
     });
   }, [sortedSubagents]);
+
+  useEffect(() => {
+    const hasRunning = subagents.some((subagent) => subagent.status === 'running');
+    if (!hasRunning) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [subagents]);
+
+  const formatRuntime = (subagent: SubagentInfo): string => {
+    if (!subagent.startedAtMs) {
+      return '--';
+    }
+    const endMs = subagent.finishedAtMs ?? nowMs;
+    const elapsedSeconds = Math.max(0, Math.floor((endMs - subagent.startedAtMs) / 1000));
+    if (elapsedSeconds < 60) {
+      return `${elapsedSeconds}${t('common.seconds')}`;
+    }
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = elapsedSeconds % 60;
+    return t('chat.minutesAndSeconds', { minutes, seconds });
+  };
 
   if (subagents.length === 0) {
     return <div className="status-panel-empty">{t('statusPanel.noSubagents')}</div>;
@@ -40,14 +67,20 @@ const SubagentList = memo(({ subagents }: SubagentListProps) => {
       {sortedSubagents.map((subagent, index) => {
         const statusIcon = subagentStatusIconMap[subagent.status] ?? 'codicon-circle-outline';
         const statusClass = `status-${subagent.status}`;
-        const isExpanded = expandedCards[subagent.id] ?? subagent.status === 'running';
+        const isExpanded = expandedCards[subagent.id] ?? false;
         const statusLabel =
           subagent.status === 'running'
             ? t('statusPanel.subagentStatusRunning')
             : subagent.status === 'completed'
               ? t('statusPanel.subagentStatusCompleted')
               : t('statusPanel.subagentStatusError');
-        const title = subagent.description || subagent.prompt || t('statusPanel.subagentNoDescription');
+        // Show the most recent action; for running subagents default to "Thinking..."
+        const displayAction = subagent.currentAction
+          ? subagent.currentAction
+          : subagent.status === 'running'
+            ? t('statusPanel.subagentThinking')
+            : subagent.description || t('statusPanel.subagentNoDescription');
+        const runtimeText = formatRuntime(subagent);
 
         const toggleCard = () => {
           setExpandedCards((prev) => ({
@@ -65,13 +98,24 @@ const SubagentList = memo(({ subagents }: SubagentListProps) => {
 
               <span className="subagent-card-main">
                 <span className="subagent-card-title">{subagent.type || t('statusPanel.subagentTab')}</span>
-                <span className="subagent-card-subtitle" title={title}>
-                  {title}
-                </span>
+                {subagent.status === 'running' ? (
+                  <TextShimmer className="subagent-action-shimmer" duration={1.4}>
+                    {displayAction}
+                  </TextShimmer>
+                ) : (
+                  <span className="subagent-card-subtitle" title={displayAction}>
+                    {displayAction}
+                  </span>
+                )}
               </span>
 
-              <span className={`subagent-status-pill ${statusClass}`}>
-                {statusLabel}
+              <span className="subagent-status-meta">
+                <span className="subagent-runtime" title={t('statusPanel.subagentRuntimeLabel', 'Runtime')}>
+                  {runtimeText}
+                </span>
+                <span className={`subagent-status-pill ${statusClass}`}>
+                  {statusLabel}
+                </span>
               </span>
 
               <span className={`codicon ${isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right'} subagent-chevron`} />
@@ -83,6 +127,12 @@ const SubagentList = memo(({ subagents }: SubagentListProps) => {
                   <div className="subagent-detail-row">
                     <span className="subagent-detail-label">{t('statusPanel.subagentDescriptionLabel')}</span>
                     <span className="subagent-detail-value">{subagent.description}</span>
+                  </div>
+                )}
+                {subagent.currentAction && (
+                  <div className="subagent-detail-row">
+                    <span className="subagent-detail-label">{t('statusPanel.subagentLastActionLabel')}</span>
+                    <span className="subagent-detail-value">{subagent.currentAction}</span>
                   </div>
                 )}
                 {subagent.prompt && (

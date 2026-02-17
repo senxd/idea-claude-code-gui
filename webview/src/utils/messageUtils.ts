@@ -336,6 +336,38 @@ export function shouldShowMessage(
 }
 
 /**
+ * Reorder content blocks so text blocks appear before adjacent tool_use blocks.
+ * Fixes a rendering issue where tool cards (e.g. batch edit) show before the
+ * explanatory text that the model generates before invoking the tool.
+ *
+ * The algorithm bubbles each text block that appears immediately after one or
+ * more consecutive tool_use blocks upward past those tool_use blocks.
+ */
+function reorderTextBeforeTools(blocks: ClaudeContentBlock[]): ClaudeContentBlock[] {
+  if (blocks.length <= 1) return blocks;
+
+  const result = [...blocks];
+
+  for (let i = 1; i < result.length; i++) {
+    if (result[i].type === 'text' && result[i - 1].type === 'tool_use') {
+      // Find where to insert (before consecutive tool_use blocks)
+      let insertPos = i - 1;
+      while (insertPos > 0 && result[insertPos - 1].type === 'tool_use') {
+        insertPos--;
+      }
+      // Only move if the position before the tool_use run is NOT already a text
+      // block (avoids reordering interleaved text/tool_use sequences from merges)
+      if (insertPos === 0 || result[insertPos - 1].type !== 'text') {
+        const textBlock = result.splice(i, 1)[0];
+        result.splice(insertPos, 0, textBlock);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Get content blocks from a message for rendering
  */
 export function getContentBlocks(
@@ -350,9 +382,9 @@ export function getContentBlocks(
       (block) => block.type === 'text' && typeof (block as any).text === 'string' && String((block as any).text).trim().length > 0,
     );
     if (!hasTextBlock && message.content && message.content.trim()) {
-      return [...rawBlocks, { type: 'text', text: localizeMessage(message.content) }];
+      return reorderTextBeforeTools([...rawBlocks, { type: 'text', text: localizeMessage(message.content) }]);
     }
-    return rawBlocks;
+    return reorderTextBeforeTools(rawBlocks);
   }
   if (message.content && message.content.trim()) {
     return [{ type: 'text', text: localizeMessage(message.content) }];

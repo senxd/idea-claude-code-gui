@@ -49,6 +49,9 @@ export interface UseWindowCallbacksOptions {
   setUsageMaxTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
   setUsageLast5hTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
   setUsageWeekTokens: React.Dispatch<React.SetStateAction<number | undefined>>;
+  setUsageLast5hPercent: React.Dispatch<React.SetStateAction<number | undefined>>;
+  setUsageWeekPercent: React.Dispatch<React.SetStateAction<number | undefined>>;
+  setUsageLast5hResetsAt: React.Dispatch<React.SetStateAction<string | undefined>>;
   setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setClaudePermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setSelectedClaudeModel: React.Dispatch<React.SetStateAction<string>>;
@@ -59,6 +62,7 @@ export interface UseWindowCallbacksOptions {
   setStreamingEnabledSetting: React.Dispatch<React.SetStateAction<boolean>>;
   setSendShortcut: React.Dispatch<React.SetStateAction<'enter' | 'cmdEnter'>>;
   setAutoOpenFileEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  setAnimatedCursorEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   setSdkStatus: React.Dispatch<React.SetStateAction<Record<string, { installed?: boolean; status?: string }>>>;
   setSdkStatusLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   setIsRewinding: (loading: boolean) => void;
@@ -66,6 +70,9 @@ export interface UseWindowCallbacksOptions {
   setCurrentRewindRequest: (request: RewindRequest | null) => void;
   setContextInfo: React.Dispatch<React.SetStateAction<ContextInfo | null>>;
   setSelectedAgent: React.Dispatch<React.SetStateAction<SelectedAgent | null>>;
+
+  // Ref to track manually dismissed context file (persists within the chat session)
+  dismissedContextFileRef: MutableRefObject<string | null>;
 
   // Refs
   currentProviderRef: MutableRefObject<string>;
@@ -122,6 +129,9 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
     setUsageMaxTokens,
     setUsageLast5hTokens,
     setUsageWeekTokens,
+    setUsageLast5hPercent,
+    setUsageWeekPercent,
+    setUsageLast5hResetsAt,
     setPermissionMode,
     setClaudePermissionMode,
     setSelectedClaudeModel,
@@ -132,6 +142,7 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
     setStreamingEnabledSetting,
     setSendShortcut,
     setAutoOpenFileEnabled,
+    setAnimatedCursorEnabled,
     setSdkStatus,
     setSdkStatusLoaded,
     setIsRewinding,
@@ -139,6 +150,7 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
     setCurrentRewindRequest,
     setContextInfo,
     setSelectedAgent,
+    dismissedContextFileRef,
     currentProviderRef,
     messagesContainerRef,
     isUserAtBottomRef,
@@ -428,6 +440,21 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
 
           return patched;
         });
+
+        // Fallback recovery: if backend has already sent a completed assistant tail message
+        // but stream-end/status callbacks were missed, clear loading/thinking/stop state.
+        const lastMessage = parsed[parsed.length - 1];
+        if (
+          lastMessage &&
+          lastMessage.type === 'assistant' &&
+          !lastMessage.isStreaming &&
+          !isStreamingRef.current
+        ) {
+          setLoading(false);
+          setLoadingStartTime(null);
+          setIsThinking(false);
+          setStreamingActive(false);
+        }
       } catch (error) {
         console.error('[Frontend] Failed to parse messages:', error);
       }
@@ -480,6 +507,11 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
     window.clearMessages = () => {
       window.__deniedToolIds?.clear();
       setMessages([]);
+      setLoading(false);
+      setLoadingStartTime(null);
+      setIsThinking(false);
+      setStreamingActive(false);
+      isStreamingRef.current = false;
     };
     window.addErrorMessage = (message) => addToast(message, 'error');
 
@@ -668,9 +700,13 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
       console.log('[Frontend] Stream ended');
       isStreamingRef.current = false;
       useBackendStreamingRenderRef.current = false;
+      setLoading(false);
+      setLoadingStartTime(null);
+      setIsThinking(false);
 
       // Notify backend about stream completion for tab status indicator
       sendBridgeEvent('tab_status_changed', JSON.stringify({ status: 'completed' }));
+      sendBridgeEvent('tab_loading_changed', JSON.stringify({ loading: false }));
 
       if (contentUpdateTimeoutRef.current) {
         clearTimeout(contentUpdateTimeoutRef.current);
@@ -875,8 +911,22 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
           const weekTokens = windowUsage && typeof windowUsage.currentWeekTokens === 'number'
             ? windowUsage.currentWeekTokens
             : undefined;
+          const last5hPercent = windowUsage && typeof windowUsage.last5hPercent === 'number'
+            ? windowUsage.last5hPercent
+            : (windowUsage && typeof windowUsage.currentSessionPercent === 'number'
+              ? windowUsage.currentSessionPercent
+              : undefined);
+          const weekPercent = windowUsage && typeof windowUsage.currentWeekPercent === 'number'
+            ? windowUsage.currentWeekPercent
+            : undefined;
+          const last5hResetsAt = windowUsage && typeof windowUsage.last5hResetsAt === 'string'
+            ? windowUsage.last5hResetsAt
+            : undefined;
           setUsageLast5hTokens(last5hTokens);
           setUsageWeekTokens(weekTokens);
+          setUsageLast5hPercent(last5hPercent);
+          setUsageWeekPercent(weekPercent);
+          setUsageLast5hResetsAt(last5hResetsAt);
         }
       } catch (error) {
         console.error('[Frontend] Failed to parse usage update:', error);
@@ -997,6 +1047,22 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
       window.updateAutoOpenFileEnabled?.(pending);
     }
 
+    window.updateAnimatedCursorEnabled = (jsonStr: string) => {
+      try {
+        const data = JSON.parse(jsonStr);
+        setAnimatedCursorEnabled(data.animatedCursorEnabled ?? true);
+      } catch (error) {
+        console.error('[Frontend] Failed to parse animated cursor enabled:', error);
+      }
+    };
+
+    // Handle pending animated cursor enabled data (from main.tsx pre-registration)
+    if ((window as unknown as Record<string, unknown>).__pendingAnimatedCursorEnabled) {
+      const pending = (window as unknown as Record<string, unknown>).__pendingAnimatedCursorEnabled as string;
+      delete (window as unknown as Record<string, unknown>).__pendingAnimatedCursorEnabled;
+      window.updateAnimatedCursorEnabled?.(pending);
+    }
+
     // Request initial settings with retry mechanism
     let settingsRetryCount = 0;
     const requestInitialSettings = () => {
@@ -1004,6 +1070,7 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
         window.sendToJava('get_streaming_enabled:');
         window.sendToJava('get_send_shortcut:');
         window.sendToJava('get_auto_open_file_enabled:');
+        window.sendToJava('get_animated_cursor_enabled:');
       } else {
         settingsRetryCount++;
         if (settingsRetryCount < MAX_RETRIES) {
@@ -1101,6 +1168,17 @@ export function useWindowCallbacks(options: UseWindowCallbacksOptions): void {
           const file = match[1];
           const startLine = match[2] ? parseInt(match[2], 10) : undefined;
           const endLine = match[3] ? parseInt(match[3], 10) : (startLine !== undefined ? startLine : undefined);
+
+          // If user dismissed this file's context, skip re-adding it
+          if (dismissedContextFileRef.current && file === dismissedContextFileRef.current) {
+            console.log('[Frontend] Skipping addSelectionInfo for dismissed file:', file);
+            return;
+          }
+          // A different file is now active, clear the dismissed state
+          if (dismissedContextFileRef.current && file !== dismissedContextFileRef.current) {
+            dismissedContextFileRef.current = null;
+          }
+
           setContextInfo({
             file,
             startLine,

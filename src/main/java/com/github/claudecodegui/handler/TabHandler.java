@@ -2,6 +2,8 @@ package com.github.claudecodegui.handler;
 
 import com.github.claudecodegui.ClaudeSDKToolWindow;
 import com.github.claudecodegui.settings.TabStateService;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -19,9 +21,11 @@ import com.intellij.ui.content.ContentManager;
 public class TabHandler extends BaseMessageHandler {
 
     private static final Logger LOG = Logger.getInstance(TabHandler.class);
+    private static final int MAX_TAB_NAME_LENGTH = 50;
 
     private static final String[] SUPPORTED_TYPES = {
-        "create_new_tab"
+        "create_new_tab",
+        "update_tab_name"
     };
 
     public TabHandler(HandlerContext context) {
@@ -38,6 +42,10 @@ public class TabHandler extends BaseMessageHandler {
         if ("create_new_tab".equals(type)) {
             LOG.debug("[TabHandler] Processing create_new_tab");
             handleCreateNewTab();
+            return true;
+        }
+        if ("update_tab_name".equals(type)) {
+            handleUpdateTabName(content);
             return true;
         }
         return false;
@@ -97,5 +105,81 @@ public class TabHandler extends BaseMessageHandler {
                 callJavaScript("addErrorMessage", escapeJs("创建新标签页失败: " + e.getMessage()));
             }
         });
+    }
+
+    private void handleUpdateTabName(String content) {
+        Project project = context.getProject();
+
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CCG");
+                if (toolWindow == null) {
+                    LOG.warn("[TabHandler] Tool window not found for update_tab_name");
+                    return;
+                }
+
+                ContentManager contentManager = toolWindow.getContentManager();
+                Content selectedContent = contentManager.getSelectedContent();
+                if (selectedContent == null) {
+                    LOG.warn("[TabHandler] No selected tab for update_tab_name");
+                    return;
+                }
+
+                String proposedName = extractTabName(content);
+                if (proposedName == null || proposedName.isEmpty()) {
+                    return;
+                }
+
+                String currentName = selectedContent.getDisplayName();
+                if (proposedName.equals(currentName)) {
+                    return;
+                }
+
+                ClaudeSDKToolWindow.ClaudeChatWindow tabWindow = ClaudeSDKToolWindow.getChatWindowForContent(selectedContent);
+                if (tabWindow != null) {
+                    tabWindow.renameTab(proposedName);
+                } else {
+                    selectedContent.setDisplayName(proposedName);
+                }
+
+                int tabIndex = contentManager.getIndexOfContent(selectedContent);
+                if (tabIndex >= 0) {
+                    TabStateService.getInstance(project).saveTabName(tabIndex, proposedName);
+                }
+            } catch (Exception e) {
+                LOG.warn("[TabHandler] Failed to update tab name: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    private String extractTabName(String content) {
+        if (content == null) {
+            return null;
+        }
+
+        String candidate = content.trim();
+        if (candidate.isEmpty()) {
+            return null;
+        }
+
+        if (candidate.startsWith("{")) {
+            try {
+                JsonObject json = new Gson().fromJson(candidate, JsonObject.class);
+                if (json != null && json.has("title") && !json.get("title").isJsonNull()) {
+                    candidate = json.get("title").getAsString().trim();
+                }
+            } catch (Exception ignored) {
+                // Fall back to raw content.
+            }
+        }
+
+        candidate = candidate.replaceAll("\\s+", " ").trim();
+        if (candidate.isEmpty()) {
+            return null;
+        }
+
+        return candidate.length() > MAX_TAB_NAME_LENGTH
+            ? candidate.substring(0, MAX_TAB_NAME_LENGTH)
+            : candidate;
     }
 }

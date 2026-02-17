@@ -86,6 +86,7 @@
     "attachmentFile": "[附件: {{fileName}}]",
     "unknownFile": "未知文件",
     "attachmentsUploaded": "[已上传附件]",
+    "connecting": "连接中",
     "streamingConnected": "Claude 已成功连接，正在理解问题"
   },
   "settings": {
@@ -149,6 +150,12 @@
         "enabled": "已开启",
         "disabled": "已关闭",
         "hint": "开启后，在项目树选择文件时会自动在编辑器中打开。关闭后需要手动操作才能打开文件。"
+      },
+      "animatedCursor": {
+        "label": "输入框动画光标",
+        "enabled": "已开启",
+        "disabled": "已关闭",
+        "hint": "开启后，聊天输入框光标会使用平滑移动和闪烁动画效果。"
       },
       "sendShortcut": {
         "label": "发送快捷键",
@@ -803,6 +810,14 @@
     "editsTab": "编辑",
     "noTodos": "暂无任务运行",
     "noSubagents": "暂无子代理运行",
+    "subagentStatusRunning": "运行中",
+    "subagentStatusCompleted": "已完成",
+    "subagentStatusError": "错误",
+    "subagentDescriptionLabel": "任务",
+    "subagentLastActionLabel": "最新操作",
+    "subagentPromptLabel": "提示词",
+    "subagentThinking": "思考中...",
+    "subagentNoDescription": "无子代理详情",
     "noFileChanges": "暂无文件改动",
     "showDiff": "查看差异",
     "expand": "展开状态面板",

@@ -81,28 +81,29 @@
   flex-direction: column;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 8px;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 0;
   overflow: visible;
   position: relative;
-  margin: 0 auto;
+  margin: 0;
+  width: 100%;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* hover 时显示蓝色边框发光效果 */
 .chat-input-box:hover {
   border-color: var(--input-focus-border);
-  box-shadow: 0 0 0 1px var(--input-focus-border);
 }
 
 /* focus 时显示蓝色边框效果（与 hover 保持一致） */
 .chat-input-box:focus-within {
   border-color: var(--input-focus-border);
-  box-shadow: 0 0 0 1px var(--input-focus-border);
 }
 
 .chat-input-box.is-resizing {
   border-color: var(--input-focus-border);
-  box-shadow: 0 0 0 1px var(--input-focus-border);
 }
 
 /* ============================================================
@@ -303,8 +304,8 @@
 /* 确保第一个可见子元素（通常是 ContextBar 或 AttachmentList）拥有圆角 */
 /* ResizeHandles 是绝对定位的 :first-child，需要选择紧随其后的可见元素 */
 .chat-input-box > .resize-handle + * {
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .context-tools {
@@ -379,28 +380,6 @@
   align-items: center;
   gap: 4px;
   margin-left: auto;
-}
-
-/* StatusPanel toggle button */
-.status-panel-toggle {
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.status-panel-toggle .codicon {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.status-panel-toggle.expanded .codicon {
-  transform: rotate(0deg);
-}
-
-.status-panel-toggle.collapsed .codicon {
-  transform: rotate(0deg);
-}
-
-.status-panel-toggle:hover .codicon {
-  color: var(--text-primary);
 }
 
 .context-item {
@@ -703,7 +682,7 @@
 /* 输入框滚动条样式 */
 
 .input-editable {
-  min-height: calc(1.5em * 4);
+  min-height: calc(1.5em * 1);
   outline: none;
   color: var(--text-primary);
   font-size: 14px;
@@ -711,6 +690,43 @@
   line-height: 1.5;
   word-wrap: break-word;
   white-space: pre-wrap;
+}
+
+.input-editable-animated-caret {
+  caret-color: transparent;
+}
+
+.input-animated-cursor {
+  position: absolute;
+  width: 2px;
+  background: var(--text-primary);
+  border-radius: 1px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+  transition: left 80ms ease, top 80ms ease, height 80ms ease, opacity 120ms ease;
+  will-change: left, top, height, opacity;
+}
+
+.input-animated-cursor.is-visible {
+  opacity: 1;
+  animation: input-animated-cursor-blink 1000ms ease-in-out infinite alternate-reverse;
+}
+
+.input-animated-cursor.is-moving {
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes input-animated-cursor-blink {
+  0%,
+  40% {
+    opacity: 0;
+  }
+  80%,
+  100% {
+    opacity: 1;
+  }
 }
 
 .input-editable:empty::before {

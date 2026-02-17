@@ -1,6 +1,7 @@
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import ChatStreamPseudoDemo from './components/ChatStreamPseudoDemo';
 import './codicon.css';
 import './styles/app.less';
 import './i18n/config';
@@ -88,9 +89,9 @@ if (enableVConsole) {
     setTimeout(() => {
       const vcSwitch = document.getElementById('__vconsole') as HTMLElement;
       if (vcSwitch) {
-        vcSwitch.style.left = '10px';
-        vcSwitch.style.right = 'auto';
-        vcSwitch.style.top = '10px';
+        vcSwitch.style.left = 'auto';
+        vcSwitch.style.right = '56px';
+        vcSwitch.style.top = '52px';
         vcSwitch.style.bottom = 'auto';
       }
     }, 100);
@@ -350,6 +351,15 @@ if (typeof window !== 'undefined' && !window.updateSendShortcut) {
   };
 }
 
+// 预注册 updateAnimatedCursorEnabled，避免后端返回状态早于 React 初始化
+if (typeof window !== 'undefined' && !window.updateAnimatedCursorEnabled) {
+  console.log('[Main] Pre-registering updateAnimatedCursorEnabled placeholder');
+  window.updateAnimatedCursorEnabled = (json: string) => {
+    console.log('[Main] Storing pending animated cursor status, length=' + (json ? json.length : 0));
+    window.__pendingAnimatedCursorEnabled = json;
+  };
+}
+
 // 预注册 updateUsageStatistics，避免后端返回状态早于 Settings/UsageStatisticsSection 初始化
 if (typeof window !== 'undefined' && !window.updateUsageStatistics) {
   console.log('[Main] Pre-registering updateUsageStatistics placeholder');
@@ -387,9 +397,12 @@ if (typeof window !== 'undefined' && !window.showPlanApprovalDialog) {
 }
 
 // 渲染 React 应用
+const demoMode = new URLSearchParams(window.location.search).get('demo');
+const RootComponent = demoMode === 'chat-stream' ? ChatStreamPseudoDemo : App;
+
 ReactDOM.createRoot(document.getElementById('app') as HTMLElement).render(
   <ErrorBoundary>
-    <App />
+    <RootComponent />
   </ErrorBoundary>,
 );
 

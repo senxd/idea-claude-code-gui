@@ -15,8 +15,14 @@ export interface SubagentInfo {
   description: string;
   /** Full prompt content */
   prompt?: string;
+  /** Most recent action executed by the subagent */
+  currentAction?: string;
   /** Execution status */
   status: SubagentStatus;
   /** Message index where this subagent was invoked */
   messageIndex: number;
+  /** Subagent start time (epoch ms), if available */
+  startedAtMs?: number;
+  /** Subagent completion time (epoch ms), if available */
+  finishedAtMs?: number;
 }

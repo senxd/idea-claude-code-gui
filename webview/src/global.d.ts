@@ -231,6 +231,11 @@ interface Window {
   updateAutoOpenFileEnabled?: (json: string) => void;
 
   /**
+   * Update animated cursor enabled setting
+   */
+  updateAnimatedCursorEnabled?: (json: string) => void;
+
+  /**
    * Update commit AI prompt configuration
    */
   updateCommitPrompt?: (json: string) => void;
@@ -541,6 +546,11 @@ interface Window {
    * Pending auto open file enabled status before React initialization
    */
   __pendingAutoOpenFileEnabled?: string;
+
+  /**
+   * Pending animated cursor enabled status before React initialization
+   */
+  __pendingAnimatedCursorEnabled?: string;
 
   __pendingPermissionDialogRequests?: string[];
 

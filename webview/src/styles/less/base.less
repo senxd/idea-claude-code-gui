@@ -82,3 +82,16 @@ html {
 }
 
 /* vConsole 调试工具 - 初始位置由 main.tsx 设置，支持拖动 */
+#__vconsole {
+    left: auto !important;
+    right: 56px !important;
+    top: 52px !important;
+    bottom: auto !important;
+    z-index: 9999 !important;
+}
+
+#__vconsole .vc-switch {
+    transform: scale(0.88);
+    transform-origin: top right;
+    opacity: 0.9;
+}

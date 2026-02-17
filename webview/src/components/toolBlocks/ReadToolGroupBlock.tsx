@@ -20,6 +20,8 @@ interface ReadToolGroupBlockProps {
     input?: ToolInput;
     result?: ToolResultBlock | null;
   }>;
+  /** Whether current assistant message is actively streaming */
+  isStreaming?: boolean;
 }
 
 /** Max visible items before scroll */
@@ -202,7 +204,8 @@ const getFileIconSvg = (filePath: string, isDirectory: boolean) => {
   return getFileIcon(extension, cleanName);
 };
 
-const ReadToolGroupBlock = ({ items }: ReadToolGroupBlockProps) => {
+const ReadToolGroupBlock = ({ items, isStreaming = false }: ReadToolGroupBlockProps) => {
+  void isStreaming;
   // Default to expanded
   const [expanded, setExpanded] = useState(true);
   const { t } = useTranslation();
@@ -224,6 +227,20 @@ const ReadToolGroupBlock = ({ items }: ReadToolGroupBlockProps) => {
     }
     prevItemCountRef.current = fileItems.length;
   }, [fileItems.length]);
+
+  const completedCount = fileItems.filter((item) => item.isCompleted).length;
+  const allCompleted = fileItems.length > 0 && completedCount === fileItems.length;
+  const prevAllCompletedRef = useRef(false);
+
+  // Auto-collapse once when all reads become completed
+  // (including non-streaming responses that render in a completed state).
+  useEffect(() => {
+    const becameAllCompleted = !prevAllCompletedRef.current && allCompleted;
+    if (becameAllCompleted) {
+      setExpanded(false);
+    }
+    prevAllCompletedRef.current = allCompleted;
+  }, [allCompleted]);
 
   if (fileItems.length === 0) {
     return null;
@@ -268,7 +285,12 @@ const ReadToolGroupBlock = ({ items }: ReadToolGroupBlockProps) => {
         </div>
       </div>
 
-      {expanded && (
+      <div
+        className={`read-group-shell ${expanded ? 'expanded' : 'collapsed'}`}
+        style={{
+          maxHeight: expanded ? `${listHeight + 12}px` : '0px',
+        }}
+      >
         <div
           ref={listRef}
           className="task-details file-list-container"
@@ -286,9 +308,10 @@ const ReadToolGroupBlock = ({ items }: ReadToolGroupBlockProps) => {
           {fileItems.map((item, index) => (
             <div
               key={index}
-              className={`file-list-item ${!item.isDirectory ? 'clickable-file' : ''}`}
+              className={`file-list-item read-group-item-enter ${!item.isDirectory ? 'clickable-file' : ''}`}
               onClick={(e) => handleFileClick(item.filePath, item.isDirectory, e)}
               style={{
+                ['--read-item-order' as string]: index,
                 display: 'flex',
                 alignItems: 'center',
                 padding: '4px 8px',
@@ -345,7 +368,7 @@ const ReadToolGroupBlock = ({ items }: ReadToolGroupBlockProps) => {
             </div>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 };

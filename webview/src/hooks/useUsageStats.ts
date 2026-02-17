@@ -12,15 +12,27 @@ export function useUsageStats(): void {
       }
     };
 
-    // Initial request
-    const initTimer = setTimeout(requestUsageStats, 500);
+    const requestWindowUsage = () => {
+      if (window.sendToJava) {
+        sendBridgeEvent('get_window_usage', '');
+      }
+    };
 
-    // Poll every 60 seconds
+    // Initial requests (window usage slightly delayed to let bridge init)
+    const initTimer = setTimeout(requestUsageStats, 500);
+    const windowUsageTimer = setTimeout(requestWindowUsage, 1500);
+
+    // Poll usage stats every 60 seconds
     const intervalId = setInterval(requestUsageStats, 60000);
+
+    // Poll window usage every 2 minutes (separate from token stats)
+    const windowUsageIntervalId = setInterval(requestWindowUsage, 120000);
 
     return () => {
       clearTimeout(initTimer);
+      clearTimeout(windowUsageTimer);
       clearInterval(intervalId);
+      clearInterval(windowUsageIntervalId);
       window.updateActiveProvider = undefined;
     };
   }, []);

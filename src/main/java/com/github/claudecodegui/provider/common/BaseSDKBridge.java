@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Base SDK bridge class.
@@ -350,6 +351,79 @@ public abstract class BaseSDKBridge {
             callback.onError(errorResult.error);
             return errorResult;
         });
+    }
+
+    /**
+     * Fetch window usage data by running the getWindowUsage channel command.
+     * Returns the usage JsonObject, or null if unavailable.
+     */
+    public JsonObject fetchWindowUsage() {
+        try {
+            String node = nodeDetector.findNodeExecutable();
+            File bridgeDir = getDirectoryResolver().findSdkDir();
+            if (bridgeDir == null || !bridgeDir.exists()) {
+                return null;
+            }
+
+            List<String> command = new ArrayList<>();
+            command.add(node);
+            command.add(new File(bridgeDir, CHANNEL_SCRIPT).getAbsolutePath());
+            command.add(getProviderName());
+            command.add("getWindowUsage");
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.directory(bridgeDir);
+            pb.redirectErrorStream(true);
+            envConfigurator.updateProcessEnvironment(pb, node);
+
+            Process process = pb.start();
+
+            // Close stdin immediately — no input needed
+            process.getOutputStream().close();
+
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+
+            boolean finished = process.waitFor(15, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                LOG.warn("[fetchWindowUsage] Process timed out");
+                return null;
+            }
+
+            // Find the last JSON line in output (skips diagnostic logs)
+            String outputStr = output.toString().trim();
+            String jsonStr = null;
+            String[] lines = outputStr.split("\n");
+            for (int i = lines.length - 1; i >= 0; i--) {
+                String l = lines[i].trim();
+                if (l.startsWith("{") && l.endsWith("}")) {
+                    jsonStr = l;
+                    break;
+                }
+            }
+            if (jsonStr == null) {
+                return null;
+            }
+
+            JsonObject result = gson.fromJson(jsonStr, JsonObject.class);
+            if (result.has("success") && result.get("success").getAsBoolean() && result.has("data")) {
+                if (result.get("data").isJsonNull()) {
+                    return null;
+                }
+                return result.getAsJsonObject("data");
+            }
+            return null;
+        } catch (Exception e) {
+            LOG.warn("[fetchWindowUsage] Failed: " + e.getMessage());
+            return null;
+        }
     }
 
     /**
